@@ -16,7 +16,7 @@ REM   - assets\*          (global hoop ellipse store, etc.)
 REM   - media\exports\*   (exported goal/miss mp4s)
 REM ============================================================================
 
-pushd "%~dp0"
+pushd "%~dp0.."
 
 echo.
 echo ==========================================================

@@ -10,7 +10,7 @@ import numpy as np
 
 
 # --- folders (edit here) ---
-REPO_ROOT = Path(__file__).resolve().parent
+REPO_ROOT = Path(__file__).resolve().parent.parent
 WORK_DIR = REPO_ROOT / "work"
 DATA_DIR = REPO_ROOT / "data"
 FRAMES_DIR = WORK_DIR / "frames_batch"

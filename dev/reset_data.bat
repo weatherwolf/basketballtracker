@@ -27,7 +27,7 @@ REM ============================================================================
 
 REM Move to the directory where this .bat lives (so paths work even if launched
 REM from a different folder).
-pushd "%~dp0"
+pushd "%~dp0.."
 
 echo.
 echo ==========================================================

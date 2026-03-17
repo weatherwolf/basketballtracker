@@ -13,7 +13,7 @@ echo NAME_RAW=%NAME_RAW%
 echo NAME=%NAME%
 
 REM Always run from the repo root (the directory containing this .bat)
-pushd "%~dp0"
+pushd "%~dp0.."
 
 REM 0) Ensure required directories exist (new folder layout)
 if not exist "data" mkdir "data"
@@ -94,7 +94,7 @@ if errorlevel 1 (
 )
 
 REM 4) Filter and detect
-python filter_frames.py --frames-raw-dir "!RUN_DIR!\frames_raw" --frames-batch-dir "!RUN_DIR!\frames_batch"
+python dev\filter_frames.py --frames-raw-dir "!RUN_DIR!\frames_raw" --frames-batch-dir "!RUN_DIR!\frames_batch"
 if errorlevel 1 exit /b 1
 
 REM 4.5) If no MP4 timestamp, compute fingerprint batch_id from shots_manifest.json and rename run folder
@@ -151,7 +151,7 @@ if /I "%~2" NEQ "nolabel" (
     copy /Y "assets\hoop_ellipses.json" "!ELLIPSE_BATCH_DIR!\global.json" >nul
   )
 
-  python label_shots.py ^
+  python dev\label_shots.py ^
     --frames-dir "!RUN_DIR!\frames_batch" ^
     --videos-dir "!EXPORT_DIR!" ^
     --debug-dir "!RUN_DIR!\debug\labels" ^

@@ -4,9 +4,9 @@ import cv2
 import numpy as np
 from pathlib import Path
 
-REPO_ROOT  = Path(__file__).resolve().parent
+REPO_ROOT  = Path(__file__).resolve().parent.parent
 CSV_PATH   = REPO_ROOT / "data" / "shot_labels.csv"
-TARGET_DATE = "2026-03-16"
+TARGET_DATE = "2026-03-17"
 
 points = []
 
@@ -95,16 +95,15 @@ def main() -> None:
         }
     }
 
-    print(f"\nFitted ellipse: center=({cx:.1f}, {cy:.1f}), axes=({major:.1f}, {minor:.1f}), angle={angle:.1f}")
+    print(f"\nFitted ellipse:")
+    print(json.dumps(ellipse_data, indent=2))
 
-    # Write to all affected ellipse JSON files
     updated = 0
     for row in affected:
         ellipse_path = REPO_ROOT / row["ellipse_meta"]
         ellipse_path.parent.mkdir(parents=True, exist_ok=True)
         ellipse_path.write_text(json.dumps(ellipse_data, indent=2), encoding="utf-8")
         updated += 1
-
     print(f"Updated {updated} ellipse files.")
 
 
