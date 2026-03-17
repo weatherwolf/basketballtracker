@@ -1,12 +1,14 @@
+import argparse
 import csv
 import json
 import cv2
 import numpy as np
+from datetime import date
 from pathlib import Path
 
 REPO_ROOT  = Path(__file__).resolve().parent.parent
 CSV_PATH   = REPO_ROOT / "data" / "shot_labels.csv"
-TARGET_DATE = "2026-03-17"
+GLOBAL_ELLIPSE = REPO_ROOT / "assets" / "hoop_ellipses.json"
 
 points = []
 
@@ -16,7 +18,6 @@ def mouse_callback(event, x, y, flags, param):
 
     if event == cv2.EVENT_LBUTTONDOWN:
         points.append((x, y))
-
     elif event == cv2.EVENT_RBUTTONDOWN:
         if points:
             points.pop()
@@ -40,38 +41,53 @@ def find_first_frame(rel_shot_dir: str) -> Path | None:
     return frames[0] if frames else None
 
 
-def main() -> None:
-    # Load all shots from the target date
-    affected = []
-    with open(CSV_PATH, newline="", encoding="utf-8") as f:
-        for row in csv.DictReader(f):
-            date = row["created_at"][:10]
-            if date == TARGET_DATE and row["ellipse_meta"]:
-                affected.append(row)
+def load_existing_ellipse(ellipse_meta: str) -> tuple | None:
+    """Return cv2-style ellipse tuple ((cx,cy),(major,minor),angle) or None."""
+    path = REPO_ROOT / ellipse_meta
+    if not path.exists():
+        # fall back to global default
+        if GLOBAL_ELLIPSE.exists():
+            path = GLOBAL_ELLIPSE
+        else:
+            return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        e = data["ellipse"]
+        cx, cy = e["center"]
+        major, minor = e["axes"]
+        return (float(cx), float(cy)), (float(major), float(minor)), float(e["angle"])
+    except Exception:
+        return None
 
-    if not affected:
-        print(f"No shots found for {TARGET_DATE}.")
-        return
 
-    print(f"Found {len(affected)} shots from {TARGET_DATE}.")
+def verify_ellipse(frame: np.ndarray, ellipse: tuple, title: str) -> bool:
+    """Show frame with ellipse drawn. Return True if user confirms it looks correct."""
+    preview = frame.copy()
+    (cx, cy), (major, minor), angle = ellipse
+    cv2.ellipse(preview, ((int(cx), int(cy)), (int(major), int(minor)), angle), (0, 255, 0), 2)
+    cv2.circle(preview, (int(cx), int(cy)), 4, (0, 0, 255), -1)
+    cv2.putText(preview, f"{title}  |  Press Y to accept, N to refit",
+                (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+    cv2.imshow("Fit Ellipse", preview)
+    while True:
+        key = cv2.waitKey(20) & 0xFF
+        if key in (ord('y'), ord('Y')):
+            cv2.destroyAllWindows()
+            return True
+        if key in (ord('n'), ord('N'), 27):
+            cv2.destroyAllWindows()
+            return False
 
-    # Open a frame from the first affected shot
-    first_frame_path = find_first_frame(affected[0]["rel_shot_dir"])
-    if first_frame_path is None:
-        print("No frames found for the first affected shot.")
-        return
 
-    frame = cv2.imread(str(first_frame_path))
-    if frame is None:
-        print(f"Could not load frame: {first_frame_path}")
-        return
-
+def interactive_fit(frame: np.ndarray) -> tuple | None:
+    """Let user click points and fit an ellipse. Returns cv2 ellipse tuple or None."""
+    points.clear()
     cv2.namedWindow("Fit Ellipse")
     cv2.setMouseCallback("Fit Ellipse", mouse_callback, {"frame": frame})
-
+    # Draw initial blank frame
+    cv2.imshow("Fit Ellipse", frame)
     print("Click points around the hoop rim (min 5).")
-    print("Left click: add point  |  Right click: undo  |  Enter: confirm")
-
+    print("Left click: add  |  Right click: undo  |  Enter: confirm  |  Escape: cancel")
     while True:
         key = cv2.waitKey(20) & 0xFF
         if key == 13 and len(points) >= 5:  # Enter
@@ -79,14 +95,14 @@ def main() -> None:
         if key == 27:  # Escape
             print("Cancelled.")
             cv2.destroyAllWindows()
-            return
-
+            return None
     cv2.destroyAllWindows()
+    pts = np.array(points, dtype=np.float32)
+    return cv2.fitEllipse(pts)
 
-    pts     = np.array(points, dtype=np.float32)
-    ellipse = cv2.fitEllipse(pts)
+
+def save_ellipse(ellipse: tuple, affected: list[dict]) -> None:
     (cx, cy), (major, minor), angle = ellipse
-
     ellipse_data = {
         "ellipse": {
             "center": [float(cx), float(cy)],
@@ -94,10 +110,7 @@ def main() -> None:
             "angle":  float(angle),
         }
     }
-
-    print(f"\nFitted ellipse:")
-    print(json.dumps(ellipse_data, indent=2))
-
+    print(f"\nFitted ellipse:\n{json.dumps(ellipse_data, indent=2)}")
     updated = 0
     for row in affected:
         ellipse_path = REPO_ROOT / row["ellipse_meta"]
@@ -105,6 +118,60 @@ def main() -> None:
         ellipse_path.write_text(json.dumps(ellipse_data, indent=2), encoding="utf-8")
         updated += 1
     print(f"Updated {updated} ellipse files.")
+
+
+def load_shots(*, batch_id: str | None, target_date: str | None) -> list[dict]:
+    affected = []
+    with open(CSV_PATH, newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            if not row["ellipse_meta"]:
+                continue
+            if batch_id:
+                if batch_id in row["rel_shot_dir"]:
+                    affected.append(row)
+            elif target_date:
+                if row["created_at"][:10] == target_date:
+                    affected.append(row)
+    return affected
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    group = ap.add_mutually_exclusive_group()
+    group.add_argument("--batch", metavar="BATCH_ID",
+                       help="Fit ellipse for all shots in this batch (e.g. pending_1826811162)")
+    group.add_argument("--date", metavar="YYYY-MM-DD", default=str(date.today()),
+                       help="Fit ellipse for all shots created on this date (default: today)")
+    args = ap.parse_args()
+
+    if args.batch:
+        affected = load_shots(batch_id=args.batch, target_date=None)
+        label = f"batch {args.batch}"
+    else:
+        affected = load_shots(batch_id=None, target_date=args.date)
+        label = f"date {args.date}"
+
+    if not affected:
+        print(f"No shots found for {label}.")
+        return
+
+    print(f"Found {len(affected)} shots for {label}.")
+
+    first_frame_path = find_first_frame(affected[0]["rel_shot_dir"])
+    if first_frame_path is None:
+        print("No frames found for the first shot.")
+        return
+
+    frame = cv2.imread(str(first_frame_path))
+    if frame is None:
+        print(f"Could not load frame: {first_frame_path}")
+        return
+
+    ellipse = interactive_fit(frame)
+    if ellipse is None:
+        return
+
+    save_ellipse(ellipse, affected)
 
 
 if __name__ == "__main__":

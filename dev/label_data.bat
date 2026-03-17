@@ -2,11 +2,10 @@
 setlocal EnableExtensions EnableDelayedExpansion
 
 if "%~1"=="" (
-  echo Usage: %~nx0 NAME [nolabel]
-  exit /b 1
+  set "NAME_RAW=test1"
+) else (
+  set "NAME_RAW=%~1"
 )
-
-set "NAME_RAW=%~1"
 REM Sanitize NAME so users can pass "test1", "test1.mp4", or even "videos\test1"
 for %%F in ("%NAME_RAW%") do set "NAME=%%~nF"
 echo NAME_RAW=%NAME_RAW%
@@ -163,6 +162,20 @@ if /I "%~2" NEQ "nolabel" (
     popd
     exit /b 1
   )
+)
+
+REM 6) Extract ball tracking data for all labeled shots
+python dev\extract_ball_tracking.py
+if errorlevel 1 (
+  popd
+  exit /b 1
+)
+
+REM 7) Verify (or refit) the hoop ellipse for this batch
+python dev\fit_ellipse.py --batch !BATCH_ID!
+if errorlevel 1 (
+  popd
+  exit /b 1
 )
 
 popd
