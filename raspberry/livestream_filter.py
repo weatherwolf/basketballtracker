@@ -16,7 +16,7 @@ UPPER_ORANGE = np.array([20, 255, 255])
 MIN_BALL_PIXELS = 50
 FILTER_EVERY_N  = 4
 DOWNSCALE_W, DOWNSCALE_H = 384, 216
-PENDING_DIR = Path(__file__).parent / "pending"
+PENDING_DIR = Path("pending")
 
 
 def ball_present(frame_bgr: np.ndarray) -> bool:
@@ -43,7 +43,8 @@ def main() -> None:
         transform=Transform(hflip=True, vflip=True),
         controls={
             "FrameDurationLimits": (8333, 8333),  # 1 / 120 s in µs
-            "ScalerCrop": (1037, 583, 2534, 1426),  # 45% zoom
+             # "ScalerCrop": (1037, 583, 2534, 1426),  # 45% zoom
+             "ScalerCrop": (1237, 783, 2334, 1626),  # 45% zoom
         },
     )
     picam2.configure(config)

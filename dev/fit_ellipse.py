@@ -142,7 +142,39 @@ def main() -> None:
                        help="Fit ellipse for all shots in this batch (e.g. pending_1826811162)")
     group.add_argument("--date", metavar="YYYY-MM-DD", default=str(date.today()),
                        help="Fit ellipse for all shots created on this date (default: today)")
+    ap.add_argument("--manual-check", action="store_true",
+                    help="Use work/inputs/camera_check.mp4 instead of shot data; saves to global ellipse file")
     args = ap.parse_args()
+
+    if args.manual_check:
+        mp4_path = REPO_ROOT / "work" / "inputs" / "camera_check.mp4"
+        if not mp4_path.exists():
+            print(f"Not found: {mp4_path}")
+            print("Run manual_camera_check.bat first to download the video.")
+            return
+        cap = cv2.VideoCapture(str(mp4_path))
+        ok, frame = cap.read()
+        cap.release()
+        if not ok or frame is None:
+            print(f"Could not read frame from: {mp4_path}")
+            return
+        print(f"Using frame from: {mp4_path}")
+        ellipse = interactive_fit(frame)
+        if ellipse is None:
+            return
+        (cx, cy), (major, minor), angle = ellipse
+        ellipse_data = {
+            "ellipse": {
+                "center": [float(cx), float(cy)],
+                "axes":   [float(major), float(minor)],
+                "angle":  float(angle),
+            }
+        }
+        print(f"\nFitted ellipse:\n{json.dumps(ellipse_data, indent=2)}")
+        GLOBAL_ELLIPSE.parent.mkdir(parents=True, exist_ok=True)
+        GLOBAL_ELLIPSE.write_text(json.dumps(ellipse_data, indent=2), encoding="utf-8")
+        print(f"Saved to: {GLOBAL_ELLIPSE}")
+        return
 
     if args.batch:
         affected = load_shots(batch_id=args.batch, target_date=None)

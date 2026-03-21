@@ -164,15 +164,15 @@ if /I "%~2" NEQ "nolabel" (
   )
 )
 
-REM 6) Extract ball tracking data for all labeled shots
-python dev\extract_ball_tracking.py
+REM 6) Fit the hoop ellipse for this batch
+python dev\fit_ellipse.py --batch !BATCH_ID!
 if errorlevel 1 (
   popd
   exit /b 1
 )
 
-REM 7) Verify (or refit) the hoop ellipse for this batch
-python dev\fit_ellipse.py --batch !BATCH_ID!
+REM 7) Extract ball tracking data for all labeled shots
+python dev\extract_ball_tracking.py
 if errorlevel 1 (
   popd
   exit /b 1

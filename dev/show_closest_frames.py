@@ -77,12 +77,20 @@ def main() -> None:
                     help="Show all frames with ball-to-hoop distance below this value, in temporal order")
     ap.add_argument("--show-frames", type=lambda v: v.lower() not in ("false", "0", "no"), default=True,
                     help="Flag to show the frames visually, default is True")
+    ap.add_argument("--batch", metavar="BATCH_ID",
+                    help="Only process shots from this batch (e.g. pending_1826811162)")
+    ap.add_argument("--shot", metavar="SHOT_NAME",
+                    help="Only process this specific shot by dataset_name (e.g. frame_test1_shot042)")
     args = ap.parse_args()
 
     shots = []
     with open(CSV_PATH, newline="", encoding="utf-8") as f:
         for row in csv.DictReader(f):
             if row["label"] == "skip" or not row["ellipse_meta"]:
+                continue
+            if args.batch and args.batch not in row["rel_shot_dir"]:
+                continue
+            if args.shot and row["dataset_name"] != args.shot:
                 continue
             shots.append(row)
 

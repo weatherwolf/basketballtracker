@@ -7,8 +7,8 @@ set "LOCAL=work\inputs\camera_check.mp4"
 
 if not exist "work\inputs" mkdir "work\inputs"
 
-echo Running manual_camera_check.sh on Pi...
-ssh weatherwolf@192.168.2.29 "cd Documents/Projects/basketballtracker && sh manual_camera_check.sh"
+echo Recording camera check clip on Pi (Ctrl+C on Pi to stop early)...
+ssh weatherwolf@192.168.2.29 "cd Documents/Projects/basketballtracker && python record_camera_check.py"
 if errorlevel 1 (
   echo SSH failed.
   popd

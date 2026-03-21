@@ -12,12 +12,14 @@ import argparse
 import csv
 import json
 import math
+import subprocess
 import sys
 from pathlib import Path
 
-REPO_ROOT     = Path(__file__).resolve().parent.parent
-CSV_PATH      = REPO_ROOT / "data" / "shot_labels.csv"
-TRACKING_DIR  = REPO_ROOT / "data" / "ball_tracking"
+REPO_ROOT         = Path(__file__).resolve().parent.parent
+CSV_PATH          = REPO_ROOT / "data" / "shot_labels.csv"
+TRACKING_DIR      = REPO_ROOT / "data" / "ball_tracking"
+NORMALIZED_DIR    = REPO_ROOT / "data" / "ball_tracking_normalized"
 
 
 def load_ellipse(ellipse_meta_rel: str):
@@ -39,14 +41,37 @@ def min_ball_distance(tracking_csv: Path, hoop_cx: float, hoop_cy: float):
     return min_dist if min_dist < float("inf") else None
 
 
+def min_normalized_distance(tracking_csv: Path):
+    """Read the pre-computed dist_n column from a normalized tracking CSV."""
+    min_dist = float("inf")
+    with open(tracking_csv, newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            dist = float(row["dist_n"])
+            if dist < min_dist:
+                min_dist = dist
+    return min_dist if min_dist < float("inf") else None
+
+
 def main():
     ap = argparse.ArgumentParser(
         description="Verify that shots with min ball-to-hoop distance >= DIST are always misses."
     )
-    ap.add_argument("--dist", type=float, default=35.0,
-                    help="Distance threshold in pixels (default: 35)")
+    ap.add_argument("--dist", type=float, default=None,
+                    help="Distance threshold (default: 35 in pixel mode, 1.0 in normalized mode)")
+    ap.add_argument("--normalized", action="store_true",
+                    help="Use hoop-normalized coordinates from data/ball_tracking_normalized/")
+    ap.add_argument("--show-violations", action="store_true",
+                    help="Open show_closest_frames.py for each violation shot")
     args = ap.parse_args()
-    threshold = args.dist
+
+    if args.normalized:
+        tracking_dir = NORMALIZED_DIR
+        threshold    = args.dist if args.dist is not None else 1.0
+        dist_unit    = "norm"
+    else:
+        tracking_dir = TRACKING_DIR
+        threshold    = args.dist if args.dist is not None else 35.0
+        dist_unit    = "px"
 
     shots = []
     with open(CSV_PATH, newline="", encoding="utf-8") as f:
@@ -55,7 +80,7 @@ def main():
                 continue
             shots.append(row)
 
-    print(f"Checking {len(shots)} shots (threshold = {threshold}px)\n")
+    print(f"Checking {len(shots)} shots (threshold = {threshold}{dist_unit})\n")
 
     violations    = []
     skipped       = []
@@ -70,32 +95,40 @@ def main():
 
         parts    = Path(shot["rel_shot_dir"]).parts
         batch_id = next((p for p in parts if p.startswith("pending_")), "unknown")
-        tracking_csv = TRACKING_DIR / f"{batch_id}_{dataset_name}.csv"
+        tracking_csv = tracking_dir / f"{batch_id}_{dataset_name}.csv"
 
         if not tracking_csv.exists():
-            skipped.append(f"{dataset_name}: tracking CSV missing ({tracking_csv.name})")
+            skipped.append(f"{batch_id}/{dataset_name}: tracking CSV missing ({tracking_csv.name})")
             continue
 
-        ellipse = load_ellipse(shot["ellipse_meta"])
-        if ellipse is None:
-            skipped.append(f"{dataset_name}: ellipse file missing")
-            continue
-
-        hoop_cx, hoop_cy = ellipse
-        min_dist = min_ball_distance(tracking_csv, hoop_cx, hoop_cy)
+        if args.normalized:
+            min_dist = min_normalized_distance(tracking_csv)
+        else:
+            ellipse = load_ellipse(shot["ellipse_meta"])
+            if ellipse is None:
+                skipped.append(f"{batch_id}/{dataset_name}: ellipse file missing")
+                continue
+            hoop_cx, hoop_cy = ellipse
+            min_dist = min_ball_distance(tracking_csv, hoop_cx, hoop_cy)
 
         if min_dist is None:
-            skipped.append(f"{dataset_name}: no rows in tracking CSV")
+            skipped.append(f"{batch_id}/{dataset_name}: no rows in tracking CSV")
             continue
 
         rule_says_miss = min_dist >= threshold
         if rule_says_miss and label != "miss":
-            violations.append(
-                f"  VIOLATION  {dataset_name}  label={label.upper()}  min_dist={min_dist:.1f}px"
-            )
+            msg = f"  VIOLATION  {batch_id}/{dataset_name}  label={label.upper()}  min_dist={min_dist:.3f}{dist_unit}"
+            violations.append(msg)
+            print(msg)
+            if args.show_violations:
+                cmd = [sys.executable, str(Path(__file__).parent / "show_closest_frames.py"),
+                       "--shot", dataset_name, "--batch", batch_id]
+                if not args.normalized:
+                    cmd += ["--dist", str(threshold)]
+                subprocess.run(cmd)
         else:
             status = f"{'MISS (rule)' if rule_says_miss else 'close shot  ':11s}"
-            print(f"  ok  {status}  {dataset_name:40s}  min_dist={min_dist:.1f}px  label={label}")
+            print(f"  ok  {status}  {batch_id}/{dataset_name:40s}  min_dist={min_dist:.3f}{dist_unit}  label={label}")
 
         if label == "goal" and min_dist > furthest_make:
             furthest_make = min_dist
@@ -107,7 +140,7 @@ def main():
                 total_misses+=1
 
     assert total_makes + total_misses == within_threshold, f"other data types leaked into within_threshold {total_makes} + {total_misses} != {within_threshold}"
-    
+
     print()
     if skipped:
         print(f"Skipped ({len(skipped)}):")
@@ -116,13 +149,13 @@ def main():
         print()
 
     if violations:
-        print(f"RULE VIOLATIONS ({len(violations)}) — rule does NOT always hold:")
+        print(f"\nRULE VIOLATIONS ({len(violations)}) — rule does NOT always hold.")
         for v in violations:
             print(v)
         sys.exit(1)
     else:
         print(f"PASSED — rule holds across all {len(shots) - len(skipped)} checked shots.")
-        print(f"Furthest make: {furthest_make:.1f}px")
+        print(f"Furthest make: {furthest_make:.3f}{dist_unit}")
         print(f"Shots within threshold: {within_threshold}, Makes: {total_makes}, Misses: {total_misses}")
 
 

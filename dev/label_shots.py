@@ -439,6 +439,7 @@ class ShotLabel:
     notes: str = ""
     created_at: str = ""
     updated_at: str = ""
+    has_stickers: bool = False
 
 
 def load_existing(json_path: Path) -> Dict[str, ShotLabel]:
@@ -471,6 +472,7 @@ def load_existing(json_path: Path) -> Dict[str, ShotLabel]:
             notes=str(it.get("notes", "")) if it.get("notes") is not None else "",
             created_at=str(it.get("created_at", "")),
             updated_at=str(it.get("updated_at", "")),
+            has_stickers=bool(it.get("has_stickers", False)),
         )
     return out
 
@@ -492,6 +494,7 @@ def write_outputs(csv_path: Path, json_path: Path, labels: Dict[str, ShotLabel],
                 "notes",
                 "created_at",
                 "updated_at",
+                "has_stickers",
             ]
         )
         for r in rows:
@@ -506,6 +509,7 @@ def write_outputs(csv_path: Path, json_path: Path, labels: Dict[str, ShotLabel],
                     r.notes,
                     r.created_at,
                     r.updated_at,
+                    r.has_stickers,
                 ]
             )
 
@@ -528,6 +532,8 @@ def main() -> int:
     ap.add_argument("--relabel", action="store_true", help="Prompt even if a shot was already labeled")
     ap.add_argument("--list", action="store_true", help="List discovered shot folders and exit")
     ap.add_argument("--out-base", default="data/shot_labels", help="Output base name (default: data/shot_labels)")
+    ap.add_argument("--stickers", type=lambda x: x.lower() not in ("false", "0", "no"), default=True,
+                    metavar="BOOL", help="Whether stickers are on the rim for this batch (default: true)")
     args = ap.parse_args()
 
     repo_root = Path(".").resolve()
@@ -592,11 +598,6 @@ def main() -> int:
         if label is None:
             break
 
-        try:
-            notes = input("Notes (optional, enter to skip): ").strip()
-        except EOFError:
-            notes = ""
-
         # Allocate a globally unique id shared across both goals and misses.
         # If we're relabeling and the shot already has an export id, keep it.
         existing_parsed = _try_extract_existing_goal_miss_id(existing.rel_export_mp4) if existing else None
@@ -641,9 +642,10 @@ def main() -> int:
             rel_preview_mp4=_to_rel_path(preview_path, repo_root),
             rel_export_mp4=_to_rel_path(export_path, repo_root) if export_path else "",
             ellipse_meta=_to_rel_path(ellipse_path, repo_root),
-            notes=notes if not debug_export_dir else (notes + ("" if not notes else " | ") + f"debug_frames={_to_rel_path(debug_export_dir, repo_root)}"),
+            notes="",
             created_at=created_at,
             updated_at=now,
+            has_stickers=args.stickers,
         )
 
         write_outputs(csv_path, json_path, labels_by_rel, meta)
