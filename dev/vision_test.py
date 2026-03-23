@@ -110,7 +110,7 @@ def load_records() -> List[ShotRecord]:
                 continue
 
             parts    = Path(row["rel_shot_dir"]).parts
-            batch_id = next((p for p in parts if p.startswith("pending_")), None)
+            batch_id = next((p for p in parts if p.startswith(("pending_", "live_"))), None)
             if not batch_id:
                 skipped += 1
                 continue

@@ -94,21 +94,21 @@ def load_dataset():
             shots.append(row)
 
     X_list, y_list, meta_list = [], [], []
-    skipped = 0
+    missing_by_batch: dict[str, int] = {}
 
     for shot in shots:
         dataset_name = shot["dataset_name"]
         parts        = Path(shot["rel_shot_dir"]).parts
-        batch_id     = next((p for p in parts if p.startswith("pending_")), "unknown")
+        batch_id     = next((p for p in parts if p.startswith(("pending_", "live_"))), "unknown")
         norm_csv     = NORMALIZED_DIR / f"{batch_id}_{dataset_name}.csv"
 
         if not norm_csv.exists():
-            skipped += 1
+            missing_by_batch[batch_id] = missing_by_batch.get(batch_id, 0) + 1
             continue
 
         sequence = load_normalized_csv(norm_csv)
         if sequence is None:
-            skipped += 1
+            missing_by_batch[batch_id] = missing_by_batch.get(batch_id, 0) + 1
             continue
 
         min_dist = sequence[:, 2].min()   # dist_n column
@@ -121,8 +121,12 @@ def load_dataset():
         y_list.append(1 if shot["label"] == "goal" else 0)
         meta_list.append({"batch_id": batch_id, "dataset_name": dataset_name, "label": shot["label"]})
 
-    if skipped:
-        print(f"  Note: {skipped} shots skipped (missing normalized CSV)\n")
+    if missing_by_batch:
+        total_missing = sum(missing_by_batch.values())
+        print(f"  Note: {total_missing} shots skipped (missing normalized CSV):")
+        for batch, count in sorted(missing_by_batch.items()):
+            print(f"    {batch}: {count} shots")
+        print()
 
     X = np.stack(X_list)   # (n_shots, 3, SERIES_LENGTH)
     y = np.array(y_list)
@@ -147,12 +151,44 @@ def main():
     n_misses = (y == 0).sum()
     print(f"  Shots used:  {len(y)}  (goals={n_goals}, misses={n_misses})")
 
-    # --- save-model: train on all data and serialize, skip CV ---
+    # --- save-model: run CV for accuracy estimate, then train on all data ---
     if args.save_model:
         models_dir = REPO_ROOT / "raspberry"
         models_dir.mkdir(exist_ok=True)
 
-        print("\nTraining on all data (no held-out split)...")
+        print(f"\nRunning {N_FOLDS}-fold CV to estimate accuracy...")
+        cv = StratifiedKFold(n_splits=N_FOLDS, shuffle=True, random_state=42)
+        accs, bal_accs = [], []
+        fold_bar = tqdm(enumerate(cv.split(X, y), start=1), total=N_FOLDS, desc="CV folds", unit="fold")
+        for fold, (train_idx, test_idx) in fold_bar:
+            X_tr, X_te = X[train_idx], X[test_idx]
+            y_tr, y_te = y[train_idx], y[test_idx]
+            fold_bar.set_postfix_str("fitting MiniRocket")
+            r = MiniRocketMultivariate(num_kernels=10_000, random_state=42)
+            r.fit(X_tr)
+            fold_bar.set_postfix_str("transforming")
+            X_tr_t = r.transform(X_tr)
+            X_te_t = r.transform(X_te)
+            fold_bar.set_postfix_str("fitting classifier")
+            s = StandardScaler()
+            X_tr_t = s.fit_transform(X_tr_t)
+            X_te_t = s.transform(X_te_t)
+            c = RidgeClassifierCV(alphas=np.logspace(-3, 3, 10))
+            c.fit(X_tr_t, y_tr)
+            y_pred = (c.decision_function(X_te_t) >= 0).astype(int)
+            acc     = accuracy_score(y_te, y_pred)
+            bal_acc = balanced_accuracy_score(y_te, y_pred)
+            accs.append(acc)
+            bal_accs.append(bal_acc)
+            fold_bar.set_postfix_str(f"acc={acc:.3f}  bal={bal_acc:.3f}")
+            tqdm.write(f"  Fold {fold:2d}:  acc={acc:.3f}  balanced_acc={bal_acc:.3f}")
+
+        print()
+        print(f"  Mean accuracy (weighted):    {np.mean(accs):.3f}  (+/- {np.std(accs):.3f})")
+        print(f"  Mean balanced accuracy:      {np.mean(bal_accs):.3f}  (+/- {np.std(bal_accs):.3f})")
+        print()
+
+        print("Training on all data and saving model...")
         rocket = MiniRocketMultivariate(num_kernels=10_000, random_state=42)
         rocket.fit(X)
         X_t = rocket.transform(X)

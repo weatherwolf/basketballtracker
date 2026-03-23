@@ -36,7 +36,7 @@ def build_preview_index():
             dataset_name = row["dataset_name"]
             rel_shot_dir = row["rel_shot_dir"]
             parts        = Path(rel_shot_dir).parts
-            batch_id     = next((p for p in parts if p.startswith("pending_")), None)
+            batch_id     = next((p for p in parts if p.startswith(("pending_", "live_"))), None)
             if not batch_id:
                 continue
             shot_number = dataset_name.split("_shot")[-1] if "_shot" in dataset_name else None

@@ -142,7 +142,7 @@ def main() -> None:
             continue
 
         parts    = Path(shot["rel_shot_dir"]).parts
-        batch_id = next((p for p in parts if p.startswith("pending_")), "unknown")
+        batch_id = next((p for p in parts if p.startswith(("pending_", "live_"))), "unknown")
         header   = f"{batch_id}  |  {dataset_name}  [{shot['label'].upper()}]"
 
         if args.show_frames:

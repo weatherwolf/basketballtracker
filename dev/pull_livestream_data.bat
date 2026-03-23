@@ -100,7 +100,7 @@ REM -----------------------------------------------------------------------
 REM 8) Extract ball tracking for the live batch
 REM -----------------------------------------------------------------------
 echo Extracting ball tracking...
-python dev\extract_ball_tracking.py --batch !BATCH_ID!
+python dev\extract_ball_tracking.py --batch !BATCH_ID! --overwrite
 if errorlevel 1 (
     echo extract_ball_tracking.py failed.
     popd & exit /b 1

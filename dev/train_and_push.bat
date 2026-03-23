@@ -14,7 +14,7 @@ if errorlevel 1 (
 )
 
 echo Pushing model to Pi...
-scp models\minirocket_model.joblib %PI_HOST%:%PI_REPO%/minirocket_model.joblib
+scp raspberry\minirocket_model.joblib %PI_HOST%:%PI_REPO%/minirocket_model.joblib
 if errorlevel 1 (
     echo SCP failed.
     popd & exit /b 1

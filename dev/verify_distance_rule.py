@@ -94,7 +94,7 @@ def main():
         label        = shot["label"]
 
         parts    = Path(shot["rel_shot_dir"]).parts
-        batch_id = next((p for p in parts if p.startswith("pending_")), "unknown")
+        batch_id = next((p for p in parts if p.startswith(("pending_", "live_"))), "unknown")
         tracking_csv = tracking_dir / f"{batch_id}_{dataset_name}.csv"
 
         if not tracking_csv.exists():
