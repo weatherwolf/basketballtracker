@@ -261,7 +261,7 @@ class LabelSession:
         self.videos_dir = repo_root / "media" / "exports" / batch_id
         self.json_path  = repo_root / "data" / "shot_labels.json"
         self.csv_path   = repo_root / "data" / "shot_labels.csv"
-        self._labels    = load_existing(self.json_path)
+        self._labels    = {}   # start fresh each session; merging into historical data happens on the Windows side
         self._lock      = threading.Lock()
         self.videos_dir.mkdir(parents=True, exist_ok=True)
 
@@ -296,6 +296,43 @@ class LabelSession:
                 updated_at=now,
                 has_stickers=self.has_stickers,
             )
+
+    def flip_last(self) -> tuple | None:
+        """Flip the most recent goal/miss label. Returns (old, new) or None if nothing to flip."""
+        with self._lock:
+            if not self._labels:
+                return None
+            last_key = list(self._labels.keys())[-1]
+            entry = self._labels[last_key]
+            old = entry.label
+            if old == "goal":
+                new = "miss"
+            elif old == "miss":
+                new = "goal"
+            else:
+                return None
+            # Rename the exported mp4 to match the new label
+            new_export = entry.rel_export_mp4
+            if entry.rel_export_mp4:
+                old_path = self.repo_root / entry.rel_export_mp4
+                if old_path.exists():
+                    new_path = old_path.with_name(old_path.name.replace(old, new, 1))
+                    old_path.rename(new_path)
+                    new_export = _to_rel_path(new_path, self.repo_root)
+
+            self._labels[last_key] = ShotLabel(
+                dataset_name=entry.dataset_name,
+                rel_shot_dir=entry.rel_shot_dir,
+                label=new,
+                rel_preview_mp4=entry.rel_preview_mp4,
+                rel_export_mp4=new_export,
+                ellipse_meta=entry.ellipse_meta,
+                notes=entry.notes,
+                created_at=entry.created_at,
+                updated_at=_now_iso(),
+                has_stickers=entry.has_stickers,
+            )
+            return (old, new)
 
     def save(self) -> int:
         """Write all labels to shot_labels.json/.csv. Returns total label count."""

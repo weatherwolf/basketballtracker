@@ -40,7 +40,7 @@ def main():
         transform=Transform(hflip=True, vflip=True),
         controls={
             "FrameDurationLimits": (8333, 8333),
-            "ScalerCrop": (1037, 583, 2534, 1426),  # 45% zoom
+            "ScalerCrop": (1152, 648, 2304, 1296),  # 50% zoom
         },
     )
     picam2.configure(config)

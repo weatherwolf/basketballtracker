@@ -55,11 +55,10 @@ RED    = "\033[91m"
 YELLOW = "\033[93m"
 CLEAR  = "\033[2J\033[H"
 
-_showing_result      = False
-_quit_flag           = threading.Event()
-_override_flag       = threading.Event()   # set by 'w'; consumed after next qualifying shot
-_key_listener_paused = threading.Event()   # set while override prompt is active
-_last_shot_dir: Path | None = None
+_showing_result  = False
+_result_lock     = threading.Lock()
+_quit_flag       = threading.Event()
+_session: "shot_io.LabelSession | None" = None
 
 
 def _key_listener() -> None:
@@ -74,16 +73,18 @@ def _key_listener() -> None:
     try:
         tty.setcbreak(fd)
         while not _quit_flag.is_set():
-            if _key_listener_paused.is_set():
-                continue
             if select.select([sys.stdin], [], [], 0.1)[0]:
                 ch = sys.stdin.read(1)
                 if ch == "q":
                     _quit_flag.set()
                 elif ch == "w":
-                    _override_flag.set()
-                    print(f"\n  {YELLOW}[w] override queued — press key after result is shown{RESET}",
-                          flush=True)
+                    if _session is not None:
+                        result = _session.flip_last()
+                        if result:
+                            old_label, new_label = result
+                            print(f"\n  {YELLOW}[w] {old_label} → {new_label}{RESET}", flush=True)
+                        else:
+                            print(f"\n  {YELLOW}[w] no shot to flip{RESET}", flush=True)
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
@@ -96,6 +97,7 @@ def _status(msg: str) -> None:
 
 def _show_result(label: str, confidence: float) -> None:
     global _showing_result
+    _result_lock.acquire()
     _showing_result = True
     color = GREEN if label == "goal" else RED
     word  = "GOAL" if label == "goal" else "MISS"
@@ -114,6 +116,7 @@ def _show_result(label: str, confidence: float) -> None:
     time.sleep(3)
     print(CLEAR, end="", flush=True)
     _showing_result = False
+    _result_lock.release()
 
 
 def _show_no_shot(reason: str) -> None:
@@ -226,22 +229,8 @@ def run_inference(frames: list, model: dict, ellipse: tuple,
     label      = "goal" if score >= 0 else "miss"
     confidence = abs(score)
 
-    _show_result(label, confidence)
-
-    # --- labeling ---
-    if _override_flag.is_set():
-        _override_flag.clear()
-        _key_listener_paused.set()
-        try:
-            chosen = shot_io.prompt_label_cbreak(default=label)
-        finally:
-            _key_listener_paused.clear()
-        if chosen is None:
-            _quit_flag.set()
-            return
-        label = chosen
-
     session.record(shot_dir, dataset_name, label)
+    _show_result(label, confidence)
 
 
 # --- camera helpers ---
@@ -263,12 +252,14 @@ def main():
     import shutil
     _here     = Path(__file__).resolve().parent
     repo_root = _here.parent if _here.name == "raspberry" else _here
+    for cleanup_root in [repo_root / "work" / "runs", repo_root / "media" / "exports"]:
+        cleanup_root.mkdir(parents=True, exist_ok=True)
+        for old in cleanup_root.iterdir():
+            if old.is_dir() and old.name.startswith("live_"):
+                print(f"Removing old live batch: {old.name}")
+                shutil.rmtree(old)
+
     runs_root = repo_root / "work" / "runs"
-    runs_root.mkdir(parents=True, exist_ok=True)
-    for old in runs_root.iterdir():
-        if old.is_dir() and old.name.startswith("live_"):
-            print(f"Removing old live batch: {old.name}")
-            shutil.rmtree(old)
 
     model_path   = Path(args.model)
     ellipse_path = Path(args.ellipse)
@@ -303,7 +294,9 @@ def main():
 
     (repo_root / "data").mkdir(parents=True, exist_ok=True)
     (repo_root / "media" / "exports").mkdir(parents=True, exist_ok=True)
-    session = shot_io.LabelSession(repo_root=repo_root, batch_id=batch_id)
+    global _session
+    _session = shot_io.LabelSession(repo_root=repo_root, batch_id=batch_id)
+    session  = _session
 
     picam2 = Picamera2()
     config = picam2.create_video_configuration(
@@ -311,7 +304,7 @@ def main():
         transform=Transform(hflip=True, vflip=True),
         controls={
             "FrameDurationLimits": (8333, 8333),
-            "ScalerCrop": (1237, 783, 2334, 1626),
+            "ScalerCrop": (1152, 648, 2304, 1296),  # 50% zoom
         },
     )
     picam2.configure(config)
@@ -366,8 +359,9 @@ def main():
         _quit_flag.set()
     finally:
         picam2.stop()
-        if infer_thread and infer_thread.is_alive():
-            infer_thread.join()
+        for t in threading.enumerate():
+            if t is not threading.current_thread() and t is not key_thread and t.is_alive():
+                t.join(timeout=5.0)
         key_thread.join(timeout=1.0)
         print(f"\n  {YELLOW}saving labels...{RESET}", flush=True)
         n = session.save()

@@ -28,11 +28,13 @@ def main():
         transform=Transform(hflip=True, vflip=True),
         controls={
             "FrameDurationLimits": (8333, 8333),
-            "ScalerCrop": (1237, 783, 2334, 1626),
+            "ScalerCrop": (1152, 648, 2304, 1296),  # 50% zoom
         },
     )
     picam2.configure(config)
     picam2.start()
+    for _ in range(10):  # let auto-exposure settle
+        picam2.capture_array("main")
     frame = cv2.cvtColor(picam2.capture_array("main"), cv2.COLOR_RGB2BGR)
     picam2.stop()
 
