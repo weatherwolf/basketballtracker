@@ -9,14 +9,12 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from config import REPO_ROOT, WORK_DIR, FRAMES_BATCH_DIR, LOWER_ORANGE, UPPER_ORANGE
 
-# --- folders (edit here) ---
-REPO_ROOT = Path(__file__).resolve().parent.parent
-WORK_DIR = REPO_ROOT / "work"
-# Defaults (can be overridden via CLI args)
-DEFAULT_FRAMES_RAW_DIR = WORK_DIR / "frames_raw"
-# Output datasets live here (per-shot subfolders)
-DEFAULT_FRAMES_BATCH_DIR = WORK_DIR / "frames_batch"
+DEFAULT_FRAMES_RAW_DIR   = WORK_DIR / "frames_raw"
+DEFAULT_FRAMES_BATCH_DIR = FRAMES_BATCH_DIR
 
 
 def _parse_args() -> argparse.Namespace:
@@ -37,10 +35,6 @@ def _parse_args() -> argparse.Namespace:
         help="If set, clears the output frames-batch-dir before writing new shot folders.",
     )
     return ap.parse_args()
-
-# --- ball color threshold ---
-LOWER_ORANGE = np.array([5, 120, 120])
-UPPER_ORANGE = np.array([20, 255, 255])
 
 # --- detection knobs ---
 MIN_CONTOUR_AREA = 150

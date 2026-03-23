@@ -12,8 +12,8 @@ import json
 import shutil
 import sys
 from pathlib import Path
-
-REPO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from config import REPO_ROOT as REPO, LABEL_CSV_FIELDS
 
 
 def main():
@@ -52,12 +52,8 @@ def main():
     )
     local_path.write_text(json.dumps(local_data, indent=2), encoding="utf-8")
 
-    fields = [
-        "dataset_name", "rel_shot_dir", "label", "rel_preview_mp4",
-        "rel_export_mp4", "ellipse_meta", "notes", "created_at", "updated_at", "has_stickers",
-    ]
     with open(REPO / "data" / "shot_labels.csv", "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
+        w = csv.DictWriter(f, fieldnames=LABEL_CSV_FIELDS, extrasaction="ignore")
         w.writeheader()
         w.writerows(local_data["items"])
 

@@ -4,11 +4,10 @@ import json
 import cv2
 import numpy as np
 from datetime import date
+import sys
 from pathlib import Path
-
-REPO_ROOT  = Path(__file__).resolve().parent.parent
-CSV_PATH   = REPO_ROOT / "data" / "shot_labels.csv"
-GLOBAL_ELLIPSE = REPO_ROOT / "assets" / "hoop_ellipses.json"
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from config import REPO_ROOT, LABELS_CSV as CSV_PATH, GLOBAL_ELLIPSE
 
 points = []
 
@@ -135,6 +134,71 @@ def load_shots(*, batch_id: str | None, target_date: str | None) -> list[dict]:
     return affected
 
 
+def detect_sticker_centers(frame: np.ndarray, lo: np.ndarray, hi: np.ndarray) -> list[tuple[float, float]]:
+    """Return (x, y) centroid of each sticker blob found in frame via HSV mask."""
+    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    mask = cv2.inRange(hsv, lo, hi)
+    # Small open/close to clean noise
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN,  kernel, iterations=1)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    centers = []
+    for c in contours:
+        area = cv2.contourArea(c)
+        if area < 20:
+            continue
+        M = cv2.moments(c)
+        if M["m00"] == 0:
+            continue
+        cx = M["m10"] / M["m00"]
+        cy = M["m01"] / M["m00"]
+        centers.append((cx, cy))
+    return centers
+
+
+def sticker_fit(frame: np.ndarray, lo: np.ndarray, hi: np.ndarray, show_debug: bool = True) -> tuple | None:
+    """Detect sticker centers, fit ellipse, show debug image. Returns cv2 ellipse tuple or None."""
+    centers = detect_sticker_centers(frame, lo, hi)
+    print(f"Detected {len(centers)} sticker(s): {[(round(x,1), round(y,1)) for x, y in centers]}")
+
+    if len(centers) != 8:
+        print(f"Expected 8 stickers, found {len(centers)}. Tune HSV args.")
+        debug = frame.copy()
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        mask_vis = cv2.inRange(hsv, lo, hi)
+        for (x, y) in centers:
+            cv2.circle(debug, (int(x), int(y)), 8, (255, 0, 255), -1)
+            cv2.circle(debug, (int(x), int(y)), 9, (0, 0, 0), 1)
+        cv2.putText(debug, f"Found {len(centers)} stickers — expected 8  |  Press any key",
+                    (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+        mask_bgr = cv2.cvtColor(mask_vis, cv2.COLOR_GRAY2BGR)
+        side_by_side = np.hstack([debug, mask_bgr])
+        cv2.imshow("Sticker Detection — ERROR", side_by_side)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+        return None
+
+    pts = np.array(centers, dtype=np.float32)
+    ellipse = cv2.fitEllipse(pts)
+    (cx, cy), (major, minor), angle = ellipse
+    if show_debug:
+        debug = frame.copy()
+        for (x, y) in centers:
+            cv2.circle(debug, (int(x), int(y)), 8, (255, 0, 255), -1)
+            cv2.circle(debug, (int(x), int(y)), 9, (0, 0, 0), 1)
+        cv2.ellipse(debug, ellipse, (0, 255, 0), 2)
+        cv2.circle(debug, (int(cx), int(cy)), 5, (0, 0, 255), -1)
+        cv2.putText(debug, f"{len(centers)} stickers  |  Press any key to continue",
+                    (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2)
+        cv2.putText(debug, f"center=({cx:.1f},{cy:.1f})  axes=({major:.1f},{minor:.1f})  angle={angle:.1f}",
+                    (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 0), 1)
+        cv2.imshow("Sticker Detection", debug)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+    return ellipse
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     group = ap.add_mutually_exclusive_group()
@@ -144,9 +208,20 @@ def main() -> None:
                        help="Fit ellipse for all shots created on this date (default: today)")
     ap.add_argument("--manual-check", action="store_true",
                     help="Use work/inputs/camera_check.mp4 instead of shot data; saves to global ellipse file")
+    ap.add_argument("--sticker-check", action="store_true",
+                    help="Auto-fit ellipse from sticker HSV detection on camera_check.mp4; saves to global ellipse file")
+    ap.add_argument("--sticker-check-silent", action="store_true",
+                    help="Same as --sticker-check but skips the debug image display")
+    # HSV tuning (same defaults as test_sticker_hsv.py)
+    ap.add_argument("--h-center", type=int, default=54,  help="Sticker hue centre OpenCV 0-179 (default 54)")
+    ap.add_argument("--h-range",  type=int, default=15,  help="+-hue range around centre (default 15)")
+    ap.add_argument("--s-lo",     type=int, default=55,  help="Min saturation 0-255 (default 55)")
+    ap.add_argument("--s-hi",     type=int, default=175, help="Max saturation 0-255 (default 175)")
+    ap.add_argument("--v-lo",     type=int, default=60,  help="Min value 0-255 (default 60)")
+    ap.add_argument("--v-hi",     type=int, default=190, help="Max value 0-255 (default 190)")
     args = ap.parse_args()
 
-    if args.manual_check:
+    if args.sticker_check or args.sticker_check_silent or args.manual_check:
         mp4_path = REPO_ROOT / "work" / "inputs" / "camera_check.mp4"
         if not mp4_path.exists():
             print(f"Not found: {mp4_path}")
@@ -159,9 +234,19 @@ def main() -> None:
             print(f"Could not read frame from: {mp4_path}")
             return
         print(f"Using frame from: {mp4_path}")
-        ellipse = interactive_fit(frame)
+
+        if args.sticker_check or args.sticker_check_silent:
+            h_lo = max(0,   args.h_center - args.h_range)
+            h_hi = min(179, args.h_center + args.h_range)
+            lo = np.array([h_lo, args.s_lo, args.v_lo], dtype=np.uint8)
+            hi = np.array([h_hi, args.s_hi, args.v_hi], dtype=np.uint8)
+            print(f"HSV range: H[{h_lo}-{h_hi}] S[{args.s_lo}-{args.s_hi}] V[{args.v_lo}-{args.v_hi}]")
+            ellipse = sticker_fit(frame, lo, hi, show_debug=not args.sticker_check_silent)
+        else:
+            ellipse = interactive_fit(frame)
+
         if ellipse is None:
-            return
+            sys.exit(1)
         (cx, cy), (major, minor), angle = ellipse
         ellipse_data = {
             "ellipse": {

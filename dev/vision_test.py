@@ -42,12 +42,9 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from torchvision.models import MobileNet_V3_Small_Weights, mobilenet_v3_small
 
-REPO_ROOT        = Path(__file__).resolve().parent.parent
-CSV_PATH         = REPO_ROOT / "data" / "shot_labels.csv"
-NORMALIZED_DIR   = REPO_ROOT / "data" / "ball_tracking_normalized"
-GLOBAL_ELLIPSE   = REPO_ROOT / "assets" / "hoop_ellipses.json"
-
-DIST_THRESHOLD   = 1.1
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from config import REPO_ROOT, LABELS_CSV as CSV_PATH, NORMALIZED_DIR, GLOBAL_ELLIPSE, DIST_THRESHOLD
 FINAL_TEST_BATCH = "pending_5014816"
 N_FOLDS          = 5
 

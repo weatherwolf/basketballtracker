@@ -9,8 +9,8 @@ Used by pull_livestream_data.bat to pull only stage-2 (close-to-rim) shots.
 import json
 import sys
 from pathlib import Path
-
-REPO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from config import REPO_ROOT as REPO
 
 
 def main():

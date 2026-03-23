@@ -12,7 +12,7 @@ echo NAME_RAW=%NAME_RAW%
 echo NAME=%NAME%
 
 REM Always run from the repo root (the directory containing this .bat)
-pushd "%~dp0.."
+pushd "%~dp0..\.."
 
 REM 0) Ensure required directories exist (new folder layout)
 if not exist "data" mkdir "data"
@@ -150,7 +150,7 @@ if /I "%~2" NEQ "nolabel" (
     copy /Y "assets\hoop_ellipses.json" "!ELLIPSE_BATCH_DIR!\global.json" >nul
   )
 
-  python dev\label_shots.py ^
+  python dev\utils\label_shots.py ^
     --frames-dir "!RUN_DIR!\frames_batch" ^
     --videos-dir "!EXPORT_DIR!" ^
     --debug-dir "!RUN_DIR!\debug\labels" ^
@@ -165,7 +165,7 @@ if /I "%~2" NEQ "nolabel" (
 )
 
 REM 6) Fit the hoop ellipse for this batch
-python dev\fit_ellipse.py --batch !BATCH_ID!
+python dev\utils\fit_ellipse.py --batch !BATCH_ID!
 if errorlevel 1 (
   popd
   exit /b 1

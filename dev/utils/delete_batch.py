@@ -19,16 +19,10 @@ import argparse
 import csv
 import json
 import shutil
+import sys
 from pathlib import Path
-
-REPO_ROOT      = Path(__file__).resolve().parent.parent
-CSV_PATH       = REPO_ROOT / "data" / "shot_labels.csv"
-JSON_PATH      = REPO_ROOT / "data" / "shot_labels.json"
-TRACKING_DIR   = REPO_ROOT / "data" / "ball_tracking"
-NORMALIZED_DIR = REPO_ROOT / "data" / "ball_tracking_normalized"
-RUNS_DIR       = REPO_ROOT / "work" / "runs"
-EXPORTS_DIR    = REPO_ROOT / "media" / "exports"
-ELLIPSES_DIR   = REPO_ROOT / "assets" / "hoop_ellipses"
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from config import REPO_ROOT, LABELS_CSV as CSV_PATH, LABELS_JSON as JSON_PATH, TRACKING_DIR, NORMALIZED_DIR, RUNS_DIR, EXPORTS_DIR, ELLIPSES_DIR
 
 
 def find_targets(batch_id: str) -> dict:

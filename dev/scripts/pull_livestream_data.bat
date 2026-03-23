@@ -5,7 +5,7 @@ set "PI_HOST=weatherwolf@192.168.2.29"
 set "PI_REPO=Documents/Projects/basketballtracker"
 
 REM Always run from the repo root
-pushd "%~dp0.."
+pushd "%~dp0..\.."
 
 echo Running the pull script
 
@@ -53,7 +53,7 @@ REM 4) Pull only labeled (stage-2) shot folders
 REM -----------------------------------------------------------------------
 echo Pulling labeled shots...
 set "SHOT_COUNT=0"
-for /f "usebackq delims=" %%A in (`python dev\list_live_shots.py !BATCH_ID!`) do (
+for /f "usebackq delims=" %%A in (`python dev\utils\list_live_shots.py !BATCH_ID!`) do (
     scp -r %PI_HOST%:%PI_REPO%/work/runs/!BATCH_ID!/frames_batch/%%A "!RUN_DIR!\frames_batch"
     if errorlevel 1 (
         echo SCP shot %%A failed.
@@ -81,7 +81,7 @@ REM -----------------------------------------------------------------------
 REM 6) Create per-shot ellipse files and merge labels into local shot_labels
 REM -----------------------------------------------------------------------
 echo Merging labels and creating per-shot ellipse files...
-python dev\pull_merge.py !BATCH_ID!
+python dev\utils\pull_merge.py !BATCH_ID!
 if errorlevel 1 (
     echo Label merge failed.
     popd & exit /b 1

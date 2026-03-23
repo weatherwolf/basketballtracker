@@ -4,15 +4,12 @@ import json
 import math
 import cv2
 import numpy as np
+import sys
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from config import REPO_ROOT, LABELS_CSV as CSV_PATH, TRACKING_DIR, LOWER_ORANGE, UPPER_ORANGE
 
-REPO_ROOT    = Path(__file__).resolve().parent.parent
-CSV_PATH     = REPO_ROOT / "data" / "shot_labels.csv"
-TRACKING_DIR = REPO_ROOT / "data" / "ball_tracking"
-TOP_N        = 5
-
-LOWER_ORANGE = np.array([5, 120, 120])
-UPPER_ORANGE = np.array([20, 255, 255])
+TOP_N = 5
 IMAGE_EXTS   = {".jpg", ".jpeg", ".png", ".bmp"}
 
 

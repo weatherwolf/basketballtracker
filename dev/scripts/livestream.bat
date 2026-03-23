@@ -5,14 +5,14 @@ set "PI_USER=weatherwolf"
 set "PI_HOST=192.168.2.29"
 set "PI_DIR=Documents/Projects/basketballtracker"
 
-pushd "%~dp0.."
+pushd "%~dp0..\.."
 
 REM 1) Setup: record calibration clip, fit ellipse, upload to Pi
 echo.
 echo ============================================================
 echo  STEP 1 - Livestream setup (ellipse calibration)
 echo ============================================================
-call dev\livestream_setup.bat
+call dev\scripts\livestream_setup.bat
 if errorlevel 1 (
   echo Setup failed. Stopping.
   popd
@@ -32,7 +32,7 @@ echo.
 echo ============================================================
 echo  STEP 3 - Pulling livestream data
 echo ============================================================
-call dev\pull_livestream_data.bat
+call dev\scripts\pull_livestream_data.bat
 if errorlevel 1 (
   echo Pull failed.
   popd

@@ -1,7 +1,7 @@
 @echo off
 setlocal
 
-pushd "%~dp0.."
+pushd "%~dp0..\.."
 
 set "PI_USER=weatherwolf"
 set "PI_HOST=192.168.2.29"
@@ -28,9 +28,9 @@ if errorlevel 1 (
   exit /b 1
 )
 
-REM 3) Fit the ellipse interactively
-echo Opening ellipse fitting...
-python dev\fit_ellipse.py --manual-check
+REM 3) Fit the ellipse from sticker detection
+echo Fitting ellipse from stickers...
+python dev\utils\fit_ellipse.py --sticker-check-silent
 if errorlevel 1 (
   echo Ellipse fitting failed or cancelled. Stopping.
   popd

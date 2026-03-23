@@ -4,7 +4,7 @@ setlocal
 set "PI_HOST=weatherwolf@192.168.2.29"
 set "PI_REPO=Documents/Projects/basketballtracker"
 
-pushd "%~dp0.."
+pushd "%~dp0..\.."
 
 echo Training model...
 python dev\minirocket_test.py --save-model

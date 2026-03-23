@@ -27,14 +27,11 @@ from sklearn.preprocessing import StandardScaler
 from sktime.transformations.panel.rocket import MiniRocketMultivariate
 from tqdm import tqdm
 
-REPO_ROOT       = Path(__file__).resolve().parent.parent
-CSV_PATH        = REPO_ROOT / "data" / "shot_labels.csv"
-NORMALIZED_DIR  = REPO_ROOT / "data" / "ball_tracking_normalized"
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from config import REPO_ROOT, LABELS_CSV as CSV_PATH, NORMALIZED_DIR, DIST_THRESHOLD, SERIES_LENGTH, CHANNELS
 
-DIST_THRESHOLD  = 1.1
-SERIES_LENGTH   = 50
-N_FOLDS         = 10
-CHANNELS        = ["xn", "yn", "dist_n", "vx", "vy", "v_dist", "ax", "ay", "a_dist"]
+N_FOLDS = 10
 
 
 def load_normalized_csv(path: Path) -> np.ndarray | None:
@@ -141,11 +138,18 @@ def main():
                     help="Use a random stratified 20%% split for the final test set instead of the hardcoded batch")
     ap.add_argument("--save-model", action="store_true",
                     help="Train on ALL data (no held-out split) and save model to models/")
+    ap.add_argument("--only-live", action="store_true",
+                    help="Only use shots from live_* batches")
     args = ap.parse_args()
     min_confidence = args.min_confidence
 
     print("Loading data...")
     X, y, meta = load_dataset()
+
+    if args.only_live:
+        live_mask = np.array([m["batch_id"].startswith("live_") for m in meta])
+        X, y, meta = X[live_mask], y[live_mask], [m for m, keep in zip(meta, live_mask) if keep]
+        print(f"  Filtered to live_ batches only.")
 
     n_goals  = y.sum()
     n_misses = (y == 0).sum()

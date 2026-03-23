@@ -14,10 +14,15 @@ import subprocess
 import sys
 from pathlib import Path
 
-REPO_ROOT             = Path(__file__).resolve().parent.parent
-WRONG_PREDS_PATH      = REPO_ROOT / "data" / "minirocket_wrong_predictions.csv"
+sys.path.insert(0, str(Path(__file__).resolve().parent / "utils"))
+from delete_clip import delete_clip
+from reverse_label import flip_label
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from config import REPO_ROOT, LABELS_CSV as LABELS_PATH
+
+WRONG_PREDS_PATH       = REPO_ROOT / "data" / "minirocket_wrong_predictions.csv"
 WRONG_PREDS_FINAL_PATH = REPO_ROOT / "data" / "minirocket_wrong_predictions_final_test.csv"
-LABELS_PATH           = REPO_ROOT / "data" / "shot_labels.csv"
 
 
 def load_wrong_predictions():
@@ -29,7 +34,10 @@ def load_wrong_predictions():
 
 
 def build_preview_index():
-    """Map (batch_id, shot_number) -> rel_preview_mp4 from shot_labels.csv."""
+    """Map (batch_id, shot_number) -> best available video path from shot_labels.csv.
+    Prefers rel_preview_mp4; falls back to rel_export_mp4 (used for live_ batches
+    which have no preview.mp4 but do have a labeled export mp4).
+    """
     index = {}
     with open(LABELS_PATH, newline="", encoding="utf-8") as f:
         for row in csv.DictReader(f):
@@ -39,10 +47,9 @@ def build_preview_index():
             batch_id     = next((p for p in parts if p.startswith(("pending_", "live_"))), None)
             if not batch_id:
                 continue
-            shot_number = dataset_name.split("_shot")[-1] if "_shot" in dataset_name else None
-            if shot_number is None:
-                continue
-            index[(batch_id, shot_number)] = row["rel_preview_mp4"]
+            shot_number = dataset_name.split("_shot")[-1] if "_shot" in dataset_name else dataset_name
+            video = row["rel_preview_mp4"] or row["rel_export_mp4"]
+            index[(batch_id, shot_number)] = video
     return index
 
 
@@ -94,11 +101,22 @@ def main():
         open_video(preview_path)
 
         try:
-            raw = input("  Press Enter for next, q to quit: ").strip().lower()
+            raw = input("  Press Enter for next, r to reverse label, d to delete, q to quit: ").strip().lower()
         except EOFError:
             break
         if raw == "q":
             break
+        if raw == "r":
+            flip_label(batch_id, shot_number)
+        if raw == "d":
+            try:
+                confirm = input(f"  Confirm delete {batch_id} / {shot_number}? [y/N]: ").strip().lower()
+            except EOFError:
+                confirm = ""
+            if confirm == "y":
+                delete_clip(batch_id, shot_number)
+            else:
+                print("  Aborted.")
 
     if not_found:
         print(f"\nCould not find preview for {len(not_found)} shots:")
