@@ -29,7 +29,7 @@ from tqdm import tqdm
 
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config import REPO_ROOT, LABELS_CSV as CSV_PATH, NORMALIZED_DIR, DIST_THRESHOLD, SERIES_LENGTH, CHANNELS
+from config import REPO_ROOT, LABELS_CSV as CSV_PATH, NORMALIZED_DIR, DIST_THRESHOLD, MIN_DIAMETER_NORM, SERIES_LENGTH, CHANNELS
 
 N_FOLDS = 10
 
@@ -42,7 +42,7 @@ def load_normalized_csv(path: Path) -> np.ndarray | None:
     rows = []
     with open(path, newline="", encoding="utf-8") as f:
         for row in csv.DictReader(f):
-            rows.append([float(row["xn"]), float(row["yn"]), float(row["dist_n"])])
+            rows.append([float(row["xn"]), float(row["yn"]), float(row["dist_n"]), float(row.get("diameter_norm", 0))])
     if not rows:
         return None
     return np.array(rows)
@@ -74,10 +74,13 @@ def add_derivatives(sequence: np.ndarray) -> np.ndarray:
     return np.concatenate([sequence, velocity, acceleration], axis=1)
 
 
-def load_dataset():
+def load_dataset(only_8_stickers: bool = False):
     """
     Read shot_labels.csv, load normalized CSVs, apply dist_n < DIST_THRESHOLD
     filter, resample to SERIES_LENGTH.
+
+    Args:
+        only_8_stickers: if True, only include shots where has_8_stickers=True
 
     Returns:
         X: np.ndarray of shape (n_shots, n_channels, SERIES_LENGTH)
@@ -87,6 +90,8 @@ def load_dataset():
     with open(CSV_PATH, newline="", encoding="utf-8") as f:
         for row in csv.DictReader(f):
             if row["label"] == "skip":
+                continue
+            if only_8_stickers and row.get("has_8_stickers", "").lower() not in ("true", "1", "yes"):
                 continue
             shots.append(row)
 
@@ -108,8 +113,10 @@ def load_dataset():
             missing_by_batch[batch_id] = missing_by_batch.get(batch_id, 0) + 1
             continue
 
-        min_dist = sequence[:, 2].min()   # dist_n column
-        if min_dist >= DIST_THRESHOLD:
+        sequence = sequence[sequence[:, 3] >= MIN_DIAMETER_NORM]
+        if len(sequence) == 0:
+            continue
+        if not (sequence[:, 2] < DIST_THRESHOLD).any():
             continue
 
         resampled = resample(sequence, SERIES_LENGTH)     # (SERIES_LENGTH, 3)
@@ -132,6 +139,8 @@ def load_dataset():
 
 def main():
     ap = argparse.ArgumentParser(description="MiniRocket CV evaluation.")
+    ap.add_argument("--only-8-stickers", action="store_true",
+                    help="Only train/evaluate on shots where has_8_stickers=True")
     ap.add_argument("--min-confidence", type=float, default=0.0,
                     help="Predictions with confidence below this are marked 'not sure' (default: 0, disabled)")
     ap.add_argument("--random-test", action="store_true",
@@ -144,7 +153,7 @@ def main():
     min_confidence = args.min_confidence
 
     print("Loading data...")
-    X, y, meta = load_dataset()
+    X, y, meta = load_dataset(only_8_stickers=args.only_8_stickers)
 
     if args.only_live:
         live_mask = np.array([m["batch_id"].startswith("live_") for m in meta])
@@ -204,12 +213,13 @@ def main():
         clf.fit(X_t, y)
 
         model = {
-            "rocket":         rocket,
-            "scaler":         scaler,
-            "clf":            clf,
-            "series_length":  SERIES_LENGTH,
-            "channels":       CHANNELS,
-            "dist_threshold": DIST_THRESHOLD,
+            "rocket":            rocket,
+            "scaler":            scaler,
+            "clf":               clf,
+            "series_length":     SERIES_LENGTH,
+            "channels":          CHANNELS,
+            "dist_threshold":    DIST_THRESHOLD,
+            "min_diameter_norm": MIN_DIAMETER_NORM,
         }
         out_path = models_dir / "minirocket_model.joblib"
         joblib.dump(model, out_path)

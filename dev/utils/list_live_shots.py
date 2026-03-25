@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import REPO_ROOT as REPO
-
+from tqdm import tqdm
 
 def main():
     if len(sys.argv) < 2:
@@ -21,7 +21,7 @@ def main():
     batch_id = sys.argv[1]
     tmp = REPO / "data" / "shot_labels_live_tmp.json"
     data = json.loads(tmp.read_text(encoding="utf-8"))
-    for item in data.get("items", []):
+    for item in tqdm(data.get("items", []), file=sys.stderr):
         rel = item.get("rel_shot_dir", "")
         if batch_id in rel:
             print(Path(rel).name)

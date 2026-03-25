@@ -91,3 +91,5 @@ assets/
 *.pt
 .claude/
 Notes.txt
+dev/scripts/config.bat
+celebrations/

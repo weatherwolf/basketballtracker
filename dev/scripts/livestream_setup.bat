@@ -3,9 +3,7 @@ setlocal
 
 pushd "%~dp0..\.."
 
-set "PI_USER=weatherwolf"
-set "PI_HOST=192.168.2.29"
-set "PI_DIR=Documents/Projects/basketballtracker"
+call "%~dp0config.bat"
 set "LOCAL_MP4=work\inputs\camera_check.mp4"
 
 if not exist "work\inputs" mkdir "work\inputs"

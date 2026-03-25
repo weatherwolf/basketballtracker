@@ -19,9 +19,12 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from tqdm import tqdm
+
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config import REPO_ROOT, LABELS_CSV as CSV_PATH, TRACKING_DIR, NORMALIZED_DIR, LOWER_ORANGE, UPPER_ORANGE
+from config import REPO_ROOT, LABELS_CSV as CSV_PATH, TRACKING_DIR, NORMALIZED_DIR, LOWER_ORANGE, UPPER_ORANGE, STICKER_TRACKING_DIR
+from utils.sticker_tracking import track_shot, _make_hsv_bounds, FIELDNAMES as STICKER_FIELDNAMES
 IMAGE_EXTS    = {".jpg", ".jpeg", ".png", ".bmp"}
 
 
@@ -89,6 +92,8 @@ def compute_centers(shot_dir: Path):
             continue
         cnt = max(contours, key=cv2.contourArea)
         (x, y), radius = cv2.minEnclosingCircle(cnt)
+        if radius < 20:
+            continue
         stem  = path.stem
         parts = stem.rsplit("_", 1)
         frame_index = int(parts[-1]) if parts[-1].isdigit() else len(rows)
@@ -110,10 +115,22 @@ def main():
                     help="Re-extract even if a CSV already exists for a shot")
     ap.add_argument("--batch", metavar="BATCH_ID",
                     help="Limit processing to a specific batch (e.g. pending_1826811162)")
+    ap.add_argument("--only-live", action="store_true",
+                    help="Only process live_ batches")
+    ap.add_argument("--h-center", type=int, default=54)
+    ap.add_argument("--h-range",  type=int, default=15)
+    ap.add_argument("--s-lo",     type=int, default=55)
+    ap.add_argument("--s-hi",     type=int, default=175)
+    ap.add_argument("--v-lo",     type=int, default=60)
+    ap.add_argument("--v-hi",     type=int, default=190)
     args = ap.parse_args()
+
+    sticker_lo, sticker_hi = _make_hsv_bounds(args.h_center, args.h_range,
+                                              args.s_lo, args.s_hi, args.v_lo, args.v_hi)
 
     TRACKING_DIR.mkdir(parents=True, exist_ok=True)
     NORMALIZED_DIR.mkdir(parents=True, exist_ok=True)
+    STICKER_TRACKING_DIR.mkdir(parents=True, exist_ok=True)
 
     shots = []
     with open(CSV_PATH, newline="", encoding="utf-8") as f:
@@ -122,38 +139,42 @@ def main():
                 continue
             shots.append(row)
 
-    print(f"Processing {len(shots)} shots\n")
+    # print(f"Processing {len(shots)} shots\n")
 
     written          = 0
     written_norm     = 0
+    written_stickers = 0
     skipped          = 0
     no_ball          = 0
 
-    for shot in shots:
+    for shot in tqdm(shots):
         dataset_name = shot["dataset_name"]
         shot_dir     = REPO_ROOT / shot["rel_shot_dir"]
         parts        = Path(shot["rel_shot_dir"]).parts
         batch_id     = next((p for p in parts if p.startswith(("pending_", "live_"))), "unknown")
-        out_path      = TRACKING_DIR   / f"{batch_id}_{dataset_name}.csv"
-        out_path_norm = NORMALIZED_DIR / f"{batch_id}_{dataset_name}.csv"
+        out_path         = TRACKING_DIR        / f"{batch_id}_{dataset_name}.csv"
+        out_path_norm    = NORMALIZED_DIR      / f"{batch_id}_{dataset_name}.csv"
+        out_path_sticker = STICKER_TRACKING_DIR / f"{batch_id}_{dataset_name}.csv"
 
         if args.batch and batch_id != args.batch:
             continue
+        if args.only_live and not batch_id.startswith("live_"):
+            continue
 
         if out_path.exists() and not args.overwrite:
-            print(f"  skip (exists)   {dataset_name}")
+            # print(f"  skip (exists)   {dataset_name}")
             skipped += 1
             continue
 
         if not shot_dir.exists():
-            print(f"  skip (no frames folder)  {dataset_name}")
+            # print(f"  skip (no frames folder)  {dataset_name}")
             skipped += 1
             continue
 
         centers = compute_centers(shot_dir)
 
         if not centers:
-            print(f"  skip (no ball detected)  {dataset_name}")
+            # print(f"  skip (no ball detected)  {dataset_name}")
             no_ball += 1
             continue
 
@@ -162,7 +183,7 @@ def main():
             writer.writeheader()
             writer.writerows(centers)
 
-        print(f"  wrote {len(centers):4d} frames  {dataset_name}")
+        # print(f"  wrote {len(centers):4d} frames  {dataset_name}")
         written += 1
 
         ellipse = load_ellipse(shot.get("ellipse_meta", ""))
@@ -192,7 +213,21 @@ def main():
 
         written_norm += 1
 
-    print(f"\nDone. written={written}  normalized={written_norm}  skipped={skipped}  no_ball={no_ball}")
+        if shot.get("has_8_stickers", "").lower() in ("true", "1", "yes"):
+            if out_path_sticker.exists() and not args.overwrite:
+                pass  # already exists, skip silently alongside ball tracking
+            else:
+                sticker_rows = track_shot(shot_dir, sticker_lo, sticker_hi)
+                if sticker_rows:
+                    with open(out_path_sticker, "w", newline="", encoding="utf-8") as f:
+                        writer = csv.DictWriter(f, fieldnames=STICKER_FIELDNAMES)
+                        writer.writeheader()
+                        writer.writerows(sticker_rows)
+                    written_stickers += 1
+                else:
+                    print(f"  WARNING: sticker tracking failed for {dataset_name}")
+
+    print(f"\nDone. written={written}  normalized={written_norm}  stickers={written_stickers}  skipped={skipped}  no_ball={no_ball}")
 
 
 if __name__ == "__main__":

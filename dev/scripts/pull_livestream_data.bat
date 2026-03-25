@@ -1,8 +1,7 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 
-set "PI_HOST=weatherwolf@192.168.2.29"
-set "PI_REPO=Documents/Projects/basketballtracker"
+call "%~dp0config.bat"
 
 REM Always run from the repo root
 pushd "%~dp0..\.."
@@ -14,7 +13,7 @@ REM 1) Find the live batch ID on the Pi
 REM -----------------------------------------------------------------------
 set "BATCH_ID="
 echo Set batch id
-for /f "usebackq delims=" %%A in (`ssh %PI_HOST% "ls %PI_REPO%/work/runs/ 2>/dev/null"`) do (
+for /f "usebackq delims=" %%A in (`ssh %PI_USER%@%PI_HOST% "ls %PI_DIR%/work/runs/ 2>/dev/null"`) do (
     echo %%A | findstr /R "^live_" >nul 2>&1
     if not errorlevel 1 set "BATCH_ID=%%A"
 )
@@ -42,7 +41,7 @@ REM -----------------------------------------------------------------------
 REM 3) Pull labels first — needed to know which shot folders to fetch
 REM -----------------------------------------------------------------------
 echo Pulling labels...
-scp %PI_HOST%:%PI_REPO%/data/shot_labels.json "data\shot_labels_live_tmp.json"
+scp %PI_USER%@%PI_HOST%:%PI_DIR%/data/shot_labels.json "data\shot_labels_live_tmp.json"
 if errorlevel 1 (
     echo SCP labels failed.
     popd & exit /b 1
@@ -54,7 +53,7 @@ REM -----------------------------------------------------------------------
 echo Pulling labeled shots...
 set "SHOT_COUNT=0"
 for /f "usebackq delims=" %%A in (`python dev\utils\list_live_shots.py !BATCH_ID!`) do (
-    scp -r %PI_HOST%:%PI_REPO%/work/runs/!BATCH_ID!/frames_batch/%%A "!RUN_DIR!\frames_batch"
+    scp -r %PI_USER%@%PI_HOST%:%PI_DIR%/work/runs/!BATCH_ID!/frames_batch/%%A "!RUN_DIR!\frames_batch"
     if errorlevel 1 (
         echo SCP shot %%A failed.
         popd & exit /b 1
@@ -71,7 +70,7 @@ set "ELLIPSE_BATCH_DIR=assets\hoop_ellipses\!BATCH_ID!"
 if exist "!ELLIPSE_BATCH_DIR!" rmdir /s /q "!ELLIPSE_BATCH_DIR!"
 mkdir "!ELLIPSE_BATCH_DIR!\per_shot" 2>nul
 
-scp %PI_HOST%:%PI_REPO%/ellipse.json "!ELLIPSE_BATCH_DIR!\global.json"
+scp %PI_USER%@%PI_HOST%:%PI_DIR%/ellipse.json "!ELLIPSE_BATCH_DIR!\global.json"
 if errorlevel 1 (
     echo SCP ellipse failed.
     popd & exit /b 1
@@ -94,7 +93,7 @@ echo Pulling exports...
 set "EXPORT_DIR=media\exports\!BATCH_ID!"
 if exist "!EXPORT_DIR!" rmdir /s /q "!EXPORT_DIR!"
 mkdir "!EXPORT_DIR!" 2>nul
-scp -r %PI_HOST%:%PI_REPO%/media/exports/!BATCH_ID! "media\exports" >nul 2>&1
+scp -r %PI_USER%@%PI_HOST%:%PI_DIR%/media/exports/!BATCH_ID! "media\exports" >nul 2>&1
 
 REM -----------------------------------------------------------------------
 REM 8) Extract ball tracking for the live batch

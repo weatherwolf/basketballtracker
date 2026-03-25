@@ -320,6 +320,8 @@ def make_preview_mp4(shot_dir: Path, dataset_name: str, fps: int, overwrite: boo
         "yuv420p",
         "-r",
         str(fps),
+        "-movflags",
+        "+faststart",
         str(out),
     ]
     _run_ffmpeg(cmd)
@@ -367,6 +369,8 @@ def export_labeled_mp4(
         "yuv420p",
         "-r",
         str(fps),
+        "-movflags",
+        "+faststart",
         str(out),
     ]
     _run_ffmpeg(cmd)
@@ -440,6 +444,7 @@ class ShotLabel:
     created_at: str = ""
     updated_at: str = ""
     has_stickers: bool = False
+    has_8_stickers: bool = False
 
 
 def load_existing(json_path: Path) -> Dict[str, ShotLabel]:
@@ -473,6 +478,7 @@ def load_existing(json_path: Path) -> Dict[str, ShotLabel]:
             created_at=str(it.get("created_at", "")),
             updated_at=str(it.get("updated_at", "")),
             has_stickers=bool(it.get("has_stickers", False)),
+            has_8_stickers=bool(it.get("has_8_stickers", False)),
         )
     return out
 
@@ -495,6 +501,7 @@ def write_outputs(csv_path: Path, json_path: Path, labels: Dict[str, ShotLabel],
                 "created_at",
                 "updated_at",
                 "has_stickers",
+                "has_8_stickers",
             ]
         )
         for r in rows:
@@ -510,6 +517,7 @@ def write_outputs(csv_path: Path, json_path: Path, labels: Dict[str, ShotLabel],
                     r.created_at,
                     r.updated_at,
                     r.has_stickers,
+                    r.has_8_stickers,
                 ]
             )
 

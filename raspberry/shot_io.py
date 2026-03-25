@@ -158,6 +158,7 @@ class ShotLabel:
     created_at: str = ""
     updated_at: str = ""
     has_stickers: bool = False
+    has_8_stickers: bool = False
 
 
 def load_existing(json_path: Path) -> Dict[str, ShotLabel]:
@@ -191,6 +192,7 @@ def load_existing(json_path: Path) -> Dict[str, ShotLabel]:
             created_at=str(it.get("created_at", "")),
             updated_at=str(it.get("updated_at", "")),
             has_stickers=bool(it.get("has_stickers", False)),
+            has_8_stickers=bool(it.get("has_8_stickers", False)),
         )
     return out
 
@@ -206,12 +208,13 @@ def write_outputs(
         w.writerow([
             "dataset_name", "rel_shot_dir", "label", "rel_preview_mp4",
             "rel_export_mp4", "ellipse_meta", "notes", "created_at", "updated_at", "has_stickers",
+            "has_8_stickers",
         ])
         for r in rows:
             w.writerow([
                 r.dataset_name, r.rel_shot_dir, r.label, r.rel_preview_mp4,
                 r.rel_export_mp4, r.ellipse_meta, r.notes, r.created_at, r.updated_at,
-                r.has_stickers,
+                r.has_stickers, r.has_8_stickers,
             ])
     payload = {"meta": meta, "items": [asdict(r) for r in rows]}
     json_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
@@ -254,10 +257,11 @@ def prompt_label_cbreak(default: Optional[str] = None) -> Optional[str]:
 # ---------------------------------------------------------------------------
 
 class LabelSession:
-    def __init__(self, repo_root: Path, batch_id: str, has_stickers: bool = True):
+    def __init__(self, repo_root: Path, batch_id: str, has_stickers: bool = True, has_8_stickers: bool = True):
         self.repo_root  = repo_root
         self.batch_id   = batch_id
-        self.has_stickers = has_stickers
+        self.has_stickers   = has_stickers
+        self.has_8_stickers = has_8_stickers
         self.videos_dir = repo_root / "media" / "exports" / batch_id
         self.json_path  = repo_root / "data" / "shot_labels.json"
         self.csv_path   = repo_root / "data" / "shot_labels.csv"
@@ -295,6 +299,7 @@ class LabelSession:
                 created_at=existing.created_at if existing and existing.created_at else now,
                 updated_at=now,
                 has_stickers=self.has_stickers,
+                has_8_stickers=self.has_8_stickers,
             )
 
     def flip_last(self) -> tuple | None:
@@ -331,6 +336,7 @@ class LabelSession:
                 created_at=entry.created_at,
                 updated_at=_now_iso(),
                 has_stickers=entry.has_stickers,
+                has_8_stickers=entry.has_8_stickers,
             )
             return (old, new)
 

@@ -3,12 +3,13 @@ setlocal
 
 pushd "%~dp0..\.."
 
+call "%~dp0config.bat"
 set "LOCAL=work\inputs\camera_check.mp4"
 
 if not exist "work\inputs" mkdir "work\inputs"
 
 echo Recording camera check clip on Pi (Ctrl+C on Pi to stop early)...
-ssh weatherwolf@192.168.2.29 "cd Documents/Projects/basketballtracker && python record_camera_check.py"
+ssh %PI_USER%@%PI_HOST% "cd %PI_DIR% && python record_camera_check.py"
 if errorlevel 1 (
   echo SSH failed.
   popd
@@ -16,7 +17,7 @@ if errorlevel 1 (
 )
 
 echo Downloading manual_camera_check.mp4 from Pi...
-scp weatherwolf@192.168.2.29:Documents/Projects/basketballtracker/videos/manual_camera_check.mp4 "%LOCAL%"
+scp %PI_USER%@%PI_HOST%:%PI_DIR%/videos/manual_camera_check.mp4 "%LOCAL%"
 if errorlevel 1 (
   echo SCP failed.
   popd

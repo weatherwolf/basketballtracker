@@ -1,11 +1,26 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 
-set "PI_USER=weatherwolf"
-set "PI_HOST=192.168.2.29"
-set "PI_DIR=Documents/Projects/basketballtracker"
+call "%~dp0config.bat"
+set "PUSH_CELEBRATIONS=false"
+
+for %%a in (%*) do (
+    if /i "%%a"=="--celebrations" set "PUSH_CELEBRATIONS=true"
+)
 
 pushd "%~dp0..\.."
+
+REM 0) Optionally push celebrations to Pi
+if /i "%PUSH_CELEBRATIONS%"=="true" (
+    echo.
+    echo ============================================================
+    echo  STEP 0 - Pushing celebrations to Pi
+    echo ============================================================
+    for /d %%d in (raspberry\celebrations\*) do (
+        ssh %PI_USER%@%PI_HOST% "mkdir -p %PI_DIR%/celebrations/%%~nd"
+        scp "raspberry\celebrations\%%~nd\*.pkl" %PI_USER%@%PI_HOST%:%PI_DIR%/celebrations/%%~nd/
+    )
+)
 
 REM 1) Setup: record calibration clip, fit ellipse, upload to Pi
 echo.
@@ -25,7 +40,9 @@ echo.
 echo ============================================================
 echo  STEP 2 - Starting inference on Pi  (q to quit)
 echo ============================================================
-ssh -t %PI_USER%@%PI_HOST% "cd %PI_DIR% && source venv/bin/activate && python inference.py"
+set "CELEBRATIONS_FLAG="
+if /i "%PUSH_CELEBRATIONS%"=="true" set "CELEBRATIONS_FLAG=--celebrations"
+ssh -t %PI_USER%@%PI_HOST% "cd %PI_DIR% && source venv/bin/activate && python inference.py --competition %CELEBRATIONS_FLAG%"
 
 REM 3) Pull data back to this machine
 echo.

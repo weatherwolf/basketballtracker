@@ -14,6 +14,8 @@ echo NAME=%NAME%
 REM Always run from the repo root (the directory containing this .bat)
 pushd "%~dp0..\.."
 
+call "%~dp0config.bat"
+
 REM 0) Ensure required directories exist (new folder layout)
 if not exist "data" mkdir "data"
 if not exist "data\ball_tracking" mkdir "data\ball_tracking"
@@ -34,7 +36,7 @@ if not exist "work\debug\goal_detector" mkdir "work\debug\goal_detector"
 if not exist "work\segmentation" mkdir "work\segmentation"
 
 REM 1) Download (remote file is always videos/test1.mp4)
-scp weatherwolf@192.168.2.29:Documents/Projects/basketballtracker/videos/test1.mp4 "work\inputs\%NAME%.mp4"
+scp %PI_USER%@%PI_HOST%:%PI_DIR%/videos/test1.mp4 "work\inputs\%NAME%.mp4"
 if errorlevel 1 (
   echo SCP failed. Stopping.
   popd

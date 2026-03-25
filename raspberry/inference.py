@@ -29,9 +29,12 @@ import joblib
 import numpy as np
 from libcamera import Transform
 from picamera2 import Picamera2
+import argparse
+import shutil
 
 sys.path.insert(0, str(Path(__file__).parent))
 import shot_io
+from competition import ScoreTracker, Player
 
 logging.getLogger("picamera2").setLevel(logging.ERROR)
 logging.getLogger("libcamera").setLevel(logging.ERROR)
@@ -165,6 +168,8 @@ def _extract_centers(frames: list) -> list:
             continue
         cnt = max(contours, key=cv2.contourArea)
         (x, y), radius = cv2.minEnclosingCircle(cnt)
+        if radius < 20:
+            continue
         centers.append((float(x), float(y), float(radius)))
     return centers
 
@@ -194,28 +199,46 @@ def _save_frames(frames: list, shot_dir: Path, dataset_name: str) -> None:
 
 def run_inference(frames: list, model: dict, ellipse: tuple,
                   shot_dir: Path, dataset_name: str,
-                  session: shot_io.LabelSession) -> None:
+                  session: shot_io.LabelSession,
+                  score_tracker: "ScoreTracker | None" = None) -> None:
     global _last_shot_dir
-    series_length  = model["series_length"]
-    dist_threshold = model["dist_threshold"]
-    rocket         = model["rocket"]
-    scaler         = model["scaler"]
-    clf            = model["clf"]
+    series_length     = model["series_length"]
+    dist_threshold    = model["dist_threshold"]
+    min_diameter_norm = model.get("min_diameter_norm", 0.0)
+    rocket            = model["rocket"]
+    scaler            = model["scaler"]
+    clf               = model["clf"]
 
     _status("saving frames...")
     _save_frames(frames, shot_dir, dataset_name)
     _last_shot_dir = shot_dir
 
+    def _count_as_miss(reason):
+        _show_no_shot(reason)
+        if score_tracker is not None:
+            global _showing_result
+            _showing_result = True
+            score_tracker._update_score("miss")
+            score_tracker.update_shot()
+            _showing_result = False
+            if not score_tracker.game_over:
+                score_tracker.print_status()
+
     _status("extracting ball centers...")
-    centers = _extract_centers(frames)
+    centers = [c for c in _extract_centers(frames) if c[2] >= 20]
     if not centers:
         _show_no_shot("no ball detected")
         return
 
-    norm     = np.array([_normalize_coords(x, y, ellipse) for x, y, _ in centers])
-    min_dist = norm[:, 2].min()
-    if min_dist >= dist_threshold:
-        _show_no_shot(f"ball too far  (min dist={min_dist:.2f})")
+    cx, cy, ax0, ax1, angle = ellipse
+    minor = min(ax0, ax1)
+    norm  = np.array([_normalize_coords(x, y, ellipse) + (r * 2 / minor,) for x, y, r in centers])
+    norm = norm[norm[:, 3] >= min_diameter_norm]
+    if len(norm) == 0:
+        _count_as_miss("ball too small in all frames")
+        return
+    if not (norm[:, 2] < dist_threshold).any():
+        _count_as_miss("ball never close to hoop")
         return
 
     _status("running model...")
@@ -232,6 +255,17 @@ def run_inference(frames: list, model: dict, ellipse: tuple,
     session.record(shot_dir, dataset_name, label)
     _show_result(label, confidence)
 
+    if score_tracker is not None:
+        global _showing_result
+        _showing_result = True
+        score_tracker._update_score(label)
+        score_tracker.update_shot()
+        _showing_result = False
+        if score_tracker.game_over:
+            _quit_flag.set()
+            return
+        score_tracker.print_status()
+
 
 # --- camera helpers ---
 
@@ -243,13 +277,17 @@ def ball_present(frame_bgr: np.ndarray) -> bool:
 
 
 def main():
-    import argparse
     ap = argparse.ArgumentParser(description="Real-time shot classifier for Raspberry Pi.")
-    ap.add_argument("--model",   default="minirocket_model.joblib", help="Path to model joblib file")
-    ap.add_argument("--ellipse", default="ellipse.json",            help="Path to hoop ellipse JSON")
+    ap.add_argument("--model",          default="minirocket_model.joblib", help="Path to model joblib file")
+    ap.add_argument("--ellipse",        default="ellipse.json",            help="Path to hoop ellipse JSON")
+    ap.add_argument("--has-8-stickers", action="store_true", default=True,
+                    help="Mark all shots in this session as has_8_stickers=True (default: True)")
+    ap.add_argument("--competition", action="store_true", default=False,
+                    help="Enable competition mode")
+    ap.add_argument("--celebrations", action="store_true", default=False,
+                    help="Show ascii celebrations on goal (default: off)")
     args = ap.parse_args()
 
-    import shutil
     _here     = Path(__file__).resolve().parent
     repo_root = _here.parent if _here.name == "raspberry" else _here
     for cleanup_root in [repo_root / "work" / "runs", repo_root / "media" / "exports"]:
@@ -285,6 +323,23 @@ def main():
     )
     print(" done\n")
 
+    # --- competition setup ---
+    score_tracker = None
+    if args.competition:
+        players = []
+        print("Enter player names one by one, press Enter with no name when done:")
+        while True:
+            name = input(f"  Player {len(players) + 1}: ").strip()
+            if not name:
+                break
+            players.append(Player(name))
+        if len(players) == 0:
+            print("No players entered, exiting.")
+            sys.exit(1)
+        match_type = "single_player" if len(players) == 1 else "multiplayer"
+        score_tracker = ScoreTracker(match_type, players, show_celebrations=args.celebrations)
+        print(f"\nCompetition started with: {', '.join(p.name for p in players)}\n")
+
     # --- batch setup ---
     batch_id  = f"live_{time.strftime('%Y%m%d_%H%M%S')}"
     batch_dir = runs_root / batch_id / "frames_batch"
@@ -295,7 +350,8 @@ def main():
     (repo_root / "data").mkdir(parents=True, exist_ok=True)
     (repo_root / "media" / "exports").mkdir(parents=True, exist_ok=True)
     global _session
-    _session = shot_io.LabelSession(repo_root=repo_root, batch_id=batch_id)
+    _session = shot_io.LabelSession(repo_root=repo_root, batch_id=batch_id,
+                                    has_8_stickers=args.has_8_stickers)
     session  = _session
 
     picam2 = Picamera2()
@@ -350,7 +406,7 @@ def main():
                 _status(f"[{time.strftime('%H:%M:%S')}] processing {n} frames...")
                 infer_thread = threading.Thread(
                     target=run_inference,
-                    args=(buf, model, ellipse, shot_dir, dataset_name, session),
+                    args=(buf, model, ellipse, shot_dir, dataset_name, session, score_tracker),
                     daemon=True,
                 )
                 infer_thread.start()

@@ -1,0 +1,5 @@
+@echo off
+REM Pi connection settings — copy this file to config.bat and edit to match your setup.
+set "PI_USER=your_pi_username"
+set "PI_HOST=192.168.0.x"
+set "PI_DIR=path/to/basketballtracker/on/pi"

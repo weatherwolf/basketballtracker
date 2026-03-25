@@ -76,6 +76,10 @@ def main():
         for row in csv.DictReader(f):
             if row["label"] == "skip" or not row["ellipse_meta"]:
                 continue
+            parts    = Path(row["rel_shot_dir"]).parts
+            batch_id = next((p for p in parts if p.startswith(("pending_", "live_"))), None)
+            if not batch_id or not batch_id.startswith("live_"):
+                continue
             shots.append(row)
 
     print(f"Checking {len(shots)} shots (threshold = {threshold}{dist_unit})\n")
