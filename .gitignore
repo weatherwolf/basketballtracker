@@ -84,7 +84,6 @@ work/
 data/
 media/
 assets/
-*.md
 .cursorignore
 .claudeignore
 *~
@@ -93,3 +92,4 @@ assets/
 Notes.txt
 dev/scripts/config.bat
 celebrations/
+*.swp

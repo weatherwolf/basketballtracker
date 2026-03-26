@@ -3,9 +3,11 @@ setlocal EnableExtensions EnableDelayedExpansion
 
 call "%~dp0config.bat"
 set "PUSH_CELEBRATIONS=false"
+set "WHOLE_VIDEO=false"
 
 for %%a in (%*) do (
     if /i "%%a"=="--celebrations" set "PUSH_CELEBRATIONS=true"
+    if /i "%%a"=="--whole-video"  set "WHOLE_VIDEO=true"
 )
 
 pushd "%~dp0..\.."
@@ -41,8 +43,10 @@ echo ============================================================
 echo  STEP 2 - Starting inference on Pi  (q to quit)
 echo ============================================================
 set "CELEBRATIONS_FLAG="
+set "WHOLE_VIDEO_FLAG="
 if /i "%PUSH_CELEBRATIONS%"=="true" set "CELEBRATIONS_FLAG=--celebrations"
-ssh -t %PI_USER%@%PI_HOST% "cd %PI_DIR% && source venv/bin/activate && python inference.py --competition %CELEBRATIONS_FLAG%"
+if /i "%WHOLE_VIDEO%"=="true"       set "WHOLE_VIDEO_FLAG=--whole-video"
+ssh -t %PI_USER%@%PI_HOST% "cd %PI_DIR% && source venv/bin/activate && python inference.py --competition %CELEBRATIONS_FLAG% %WHOLE_VIDEO_FLAG%"
 
 REM 3) Pull data back to this machine
 echo.

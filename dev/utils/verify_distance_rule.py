@@ -14,10 +14,12 @@ import json
 import math
 import subprocess
 import sys
-import sys
+import os
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import REPO_ROOT, LABELS_CSV as CSV_PATH, TRACKING_DIR, NORMALIZED_DIR, DIST_THRESHOLD
+from delete_clip import delete_clip
+from reverse_label import flip_label
 
 
 def load_ellipse(ellipse_meta_rel: str):
@@ -50,6 +52,9 @@ def min_normalized_distance(tracking_csv: Path):
     return min_dist if min_dist < float("inf") else None
 
 
+def open_video(path: Path) -> None:
+    os.startfile(str(path))
+
 def main():
     ap = argparse.ArgumentParser(
         description="Verify that shots with min ball-to-hoop distance >= DIST are always misses."
@@ -60,6 +65,10 @@ def main():
                     help="Use hoop-normalized coordinates from data/ball_tracking_normalized/")
     ap.add_argument("--show-violations", action="store_true",
                     help="Open show_closest_frames.py for each violation shot")
+    ap.add_argument("--show-violations-video", action="store_true",
+                    help="Open show_closest_frames.py for each violation shot")
+    ap.add_argument("--only-live", action="store_true",
+                    help="Only check shots from live_ batches")
     args = ap.parse_args()
 
     if args.normalized:
@@ -78,7 +87,9 @@ def main():
                 continue
             parts    = Path(row["rel_shot_dir"]).parts
             batch_id = next((p for p in parts if p.startswith(("pending_", "live_"))), None)
-            if not batch_id or not batch_id.startswith("live_"):
+            if not batch_id:
+                continue
+            if args.only_live and not batch_id.startswith("live_"):
                 continue
             shots.append(row)
 
@@ -128,6 +139,34 @@ def main():
                 if not args.normalized:
                     cmd += ["--dist", str(threshold)]
                 subprocess.run(cmd)
+            elif args.show_violations_video:
+                video = shot.get("rel_preview_mp4") or shot.get("rel_export_mp4")
+                if not video:
+                    print(f"  (no video found for {batch_id}/{dataset_name})")
+                else:
+                    preview_path = REPO_ROOT / video
+                    if not preview_path.exists():
+                        print(f"  (video file missing: {video})")
+                    else:
+                        open_video(preview_path)
+                        try:
+                            raw = input("  Press Enter for next, r to reverse label, d to delete, q to quit: ").strip().lower()
+                        except EOFError:
+                            break
+                        if raw == "q":
+                            break
+                        if raw == "r":
+                            flip_label(batch_id, dataset_name)
+                        if raw == "d":
+                            try:
+                                confirm = input(f"  Confirm delete {batch_id} / {dataset_name}? [y/N]: ").strip().lower()
+                            except EOFError:
+                                confirm = ""
+                            if confirm == "y":
+                                delete_clip(batch_id, dataset_name)
+                            else:
+                                print("  Aborted.")
+
         else:
             status = f"{'MISS (rule)' if rule_says_miss else 'close shot  ':11s}"
             print(f"  ok  {status}  {batch_id}/{dataset_name:40s}  min_dist={min_dist:.3f}{dist_unit}  label={label}")

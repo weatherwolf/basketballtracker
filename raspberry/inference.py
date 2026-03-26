@@ -286,6 +286,8 @@ def main():
                     help="Enable competition mode")
     ap.add_argument("--celebrations", action="store_true", default=False,
                     help="Show ascii celebrations on goal (default: off)")
+    ap.add_argument("--whole-video", action="store_true", default=False,
+                    help="Record the entire session to videos/whole_recording.mp4")
     args = ap.parse_args()
 
     _here     = Path(__file__).resolve().parent
@@ -354,6 +356,15 @@ def main():
                                     has_8_stickers=args.has_8_stickers)
     session  = _session
 
+    video_writer = None
+    if args.whole_video:
+        videos_dir = repo_root / "videos"
+        videos_dir.mkdir(parents=True, exist_ok=True)
+        video_path = str(videos_dir / "whole_recording.mp4")
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        video_writer = cv2.VideoWriter(video_path, fourcc, 30, (1536, 864))
+        print(f"Recording whole session to: {video_path}")
+
     picam2 = Picamera2()
     config = picam2.create_video_configuration(
         main={"size": (1536, 864), "format": "BGR888"},
@@ -380,6 +391,8 @@ def main():
     try:
         while not _quit_flag.is_set():
             frame = cv2.cvtColor(picam2.capture_array("main"), cv2.COLOR_RGB2BGR)
+            if video_writer is not None:
+                video_writer.write(frame)
             frame_count += 1
 
             if ball_in_frame:
@@ -415,6 +428,9 @@ def main():
         _quit_flag.set()
     finally:
         picam2.stop()
+        if video_writer is not None:
+            video_writer.release()
+            print(f"  Whole session video saved: {video_path}")
         for t in threading.enumerate():
             if t is not threading.current_thread() and t is not key_thread and t.is_alive():
                 t.join(timeout=5.0)
