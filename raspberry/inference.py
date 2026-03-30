@@ -377,11 +377,13 @@ def main():
     picam2.configure(config)
     picam2.start()
 
-    ball_in_frame = False
-    frame_count   = 0
-    frame_buffer  = []
-    infer_thread  = None
-    shot_count    = 0
+    ball_in_frame  = False
+    frame_count    = 0
+    frame_buffer   = []
+    infer_thread   = None
+    shot_count     = 0
+    last_shot_time = 0.0
+    SHOT_COOLDOWN  = 2.0
 
     key_thread = threading.Thread(target=_key_listener, daemon=True)
     key_thread.start()
@@ -404,13 +406,17 @@ def main():
             detected = ball_present(frame)
 
             if detected and not ball_in_frame:
-                ball_in_frame = True
-                frame_buffer  = [frame]
-                _status(f"[{time.strftime('%H:%M:%S')}] ball in frame...")
+                if time.time() - last_shot_time < SHOT_COOLDOWN:
+                    pass
+                else:
+                    ball_in_frame = True
+                    frame_buffer  = [frame]
+                    _status(f"[{time.strftime('%H:%M:%S')}] ball in frame...")
 
             elif not detected and ball_in_frame:
-                ball_in_frame = False
-                shot_count   += 1
+                ball_in_frame  = False
+                last_shot_time = time.time()
+                shot_count    += 1
                 n             = len(frame_buffer)
                 buf           = frame_buffer.copy()
                 frame_buffer  = []

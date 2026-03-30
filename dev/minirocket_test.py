@@ -29,23 +29,26 @@ from tqdm import tqdm
 
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config import REPO_ROOT, LABELS_CSV as CSV_PATH, NORMALIZED_DIR, DIST_THRESHOLD, MIN_DIAMETER_NORM, SERIES_LENGTH, CHANNELS
+from config import REPO_ROOT, LABELS_CSV as CSV_PATH, NORMALIZED_DIR, STICKER_TRACKING_DIR, DIST_THRESHOLD, MIN_DIAMETER_NORM, SERIES_LENGTH, CHANNELS
 
 N_FOLDS = 10
 
 
-def load_normalized_csv(path: Path) -> np.ndarray | None:
+def load_sticker_csv(path: Path, series_length: int) -> np.ndarray | None:
     """
-    Load a normalized tracking CSV and return an array of shape (n_frames, 3).
-    Returns None if the file is empty or unreadable.
+    Load a sticker tracking CSV and return an array of shape (series_length, 8)
+    resampled to series_length timesteps. Returns None if empty or unreadable.
     """
     rows = []
     with open(path, newline="", encoding="utf-8") as f:
         for row in csv.DictReader(f):
-            rows.append([float(row["xn"]), float(row["yn"]), float(row["dist_n"]), float(row.get("diameter_norm", 0))])
+            rows.append([1.0 if row[f"sticker_{i}"] in ("True", "1") else 0.0 for i in range(1, 9)])
     if not rows:
         return None
-    return np.array(rows)
+    s = np.array(rows)
+    t_old = np.linspace(0, 1, len(s))
+    t_new = np.linspace(0, 1, series_length)
+    return np.stack([np.interp(t_new, t_old, s[:, c]) for c in range(8)], axis=1)
 
 
 def resample(sequence: np.ndarray, length: int) -> np.ndarray:
@@ -74,16 +77,19 @@ def add_derivatives(sequence: np.ndarray) -> np.ndarray:
     return np.concatenate([sequence, velocity, acceleration], axis=1)
 
 
-def load_dataset(only_8_stickers: bool = False):
+def load_dataset(only_8_stickers: bool = False, include_stickers: bool = False):
     """
     Read shot_labels.csv, load normalized CSVs, apply dist_n < DIST_THRESHOLD
     filter, resample to SERIES_LENGTH.
 
     Args:
-        only_8_stickers: if True, only include shots where has_8_stickers=True
+        only_8_stickers:  if True, only include shots where has_8_stickers=True
+        include_stickers: if True, append 8 sticker visibility channels (indices 12-19).
+                          Shots without a sticker CSV are skipped.
 
     Returns:
         X: np.ndarray of shape (n_shots, n_channels, SERIES_LENGTH)
+           n_channels = 12 normally, 20 when include_stickers=True
         y: np.ndarray of shape (n_shots,) with 1=goal, 0=other
     """
     shots = []
@@ -108,20 +114,34 @@ def load_dataset(only_8_stickers: bool = False):
             missing_by_batch[batch_id] = missing_by_batch.get(batch_id, 0) + 1
             continue
 
-        sequence = load_normalized_csv(norm_csv)
-        if sequence is None:
+        rows = []
+        with open(norm_csv, newline="", encoding="utf-8") as f:
+            for row in csv.DictReader(f):
+                rows.append([float(row["xn"]), float(row["yn"]), float(row["dist_n"]), float(row.get("diameter_norm", 0))])
+        if not rows:
             missing_by_batch[batch_id] = missing_by_batch.get(batch_id, 0) + 1
             continue
 
+        sequence = np.array(rows)
         sequence = sequence[sequence[:, 3] >= MIN_DIAMETER_NORM]
         if len(sequence) == 0:
             continue
         if not (sequence[:, 2] < DIST_THRESHOLD).any():
             continue
 
-        resampled = resample(sequence, SERIES_LENGTH)     # (SERIES_LENGTH, 3)
-        resampled = add_derivatives(resampled)           # (SERIES_LENGTH, 9)
-        X_list.append(resampled.T)                       # (9, SERIES_LENGTH)
+        resampled = resample(sequence, SERIES_LENGTH)    # (SERIES_LENGTH, 4)
+        resampled = add_derivatives(resampled)           # (SERIES_LENGTH, 12)
+
+        if include_stickers:
+            sticker_csv = STICKER_TRACKING_DIR / f"{batch_id}_{dataset_name}.csv"
+            if not sticker_csv.exists():
+                continue
+            sticker_seq = load_sticker_csv(sticker_csv, SERIES_LENGTH)  # (SERIES_LENGTH, 8)
+            if sticker_seq is None:
+                continue
+            resampled = np.concatenate([resampled, sticker_seq], axis=1)  # (SERIES_LENGTH, 20)
+
+        X_list.append(resampled.T)                       # (12 or 20, SERIES_LENGTH)
         y_list.append(1 if shot["label"] == "goal" else 0)
         meta_list.append({"batch_id": batch_id, "dataset_name": dataset_name, "label": shot["label"]})
 
@@ -149,11 +169,13 @@ def main():
                     help="Train on ALL data (no held-out split) and save model to models/")
     ap.add_argument("--only-live", action="store_true",
                     help="Only use shots from live_* batches")
+    ap.add_argument("--with-stickers", action="store_true",
+                    help="Append 8 sticker visibility channels (indices 12-19). Requires has_8_stickers shots with sticker CSVs.")
     args = ap.parse_args()
     min_confidence = args.min_confidence
 
     print("Loading data...")
-    X, y, meta = load_dataset(only_8_stickers=args.only_8_stickers)
+    X, y, meta = load_dataset(only_8_stickers=args.only_8_stickers, include_stickers=args.with_stickers)
 
     if args.only_live:
         live_mask = np.array([m["batch_id"].startswith("live_") for m in meta])

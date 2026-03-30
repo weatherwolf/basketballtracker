@@ -18,6 +18,8 @@ class ScoreTracker:
         self.redemption_mode = False
         self.show_celebrations = show_celebrations
         self.game_over = False
+        self._pending_winner = None           # set when entering redemption; cleared in _end_redemption
+        self._pre_redemption_players = None  # player order saved on redemption entry; restored on tie
 
     def update_shot(self):
         self.shot_count += 1
@@ -34,6 +36,8 @@ class ScoreTracker:
             if label == "miss":
                 self.players.pop(self.shot_count)
                 self.shot_count -= 1
+            else:
+                self.players[self.shot_count].update_score()
             return
 
         if label == "miss":
@@ -52,10 +56,19 @@ class ScoreTracker:
         players_after = self.players[self.shot_count + 1:]
         eligible = [p for p in players_after if p.round_score == self.match.scores_per_round - 1]
 
-        self._end_round(winner)
-        if self.game_over:
+        # No eligible players: end round immediately, then restore via empty redemption
+        if not eligible:
+            self._end_round(winner)
+            if self.game_over:
+                return
+            self.players = [winner]
+            self.shot_count = 0
+            self.redemption_mode = True
             return
 
+        # Defer round award until after redemption shots are taken
+        self._pending_winner = winner
+        self._pre_redemption_players = self.players[:]
         self.players = [winner] + eligible
         self.shot_count = 0
         self.redemption_mode = True
@@ -72,8 +85,36 @@ class ScoreTracker:
 
     def _end_redemption(self):
         self.redemption_mode = False
-        last = self.players[-1]
-        self.players = [last] + [p for p in self.all_players if p is not last]
+
+        if self._pending_winner is None:
+            # No-eligible path: _end_round already called, just restore full player list
+            lead = self.players[0]
+            self.players = [lead] + [p for p in self.all_players if p is not lead]
+            self._pre_redemption_players = None
+            self.shot_count = 0
+            return
+
+        winner = self._pending_winner
+        self._pending_winner = None
+        survivors = self.players[1:]  # eligible players still in (scored in redemption)
+
+        if survivors:
+            # Tied: restore the original rotation — nobody won, continue as before.
+            # All players restart at scores_per_round - 1 (one goal away from triggering again).
+            survivor_names = " & ".join(p.name for p in survivors)
+            for p in self.all_players:
+                p.round_score = self.match.scores_per_round - 1
+            self.players = self._pre_redemption_players[:]
+            print(f"\n  {survivor_names} {'ties' if len(survivors) == 1 else 'tie'} the round! No round win awarded — continuing.\n", flush=True)
+        else:
+            # No survivors — winner takes the round
+            self._end_round(winner)
+            if self.game_over:
+                self._pre_redemption_players = None
+                return
+            self.players = [winner] + [p for p in self.all_players if p is not winner]
+
+        self._pre_redemption_players = None
         self.shot_count = 0
 
     def print_status(self):
